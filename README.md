@@ -12,17 +12,21 @@ COSMIC DE doesn't implement `wlr-gamma-control-unstable-v1` protocol yet, so too
 
 This package provides:
 - **Direct DRM manipulation** tool to set color temperature
-- **Automatic daemon** that applies settings when you switch to TTY3
+- **Automatic daemon** that applies settings when you switch TTYs (auto, force warm, force cool)
 - **Config file** with live reload (changes apply instantly via inotify)
 - **Desktop notifications** to remind you when to apply (optional)
 
 ### How It Works
 
 1. A daemon runs in the background monitoring TTY switches
-2. You press **Ctrl+Alt+F3** (switches to TTY3)
-3. Daemon detects the switch and applies gamma (COSMIC releases DRM lock on TTY3)
+2. You press **Ctrl+Alt+F3** (switches to TTY3) for automatic time-based temperature
+3. Daemon detects the switch and applies gamma (COSMIC releases DRM lock on TTY switch)
 4. You immediately press **Ctrl+Alt+F2** (back to COSMIC)
 5. Total time: ~2 seconds, screen flickers briefly
+
+You can also **force** a specific temperature:
+- **Ctrl+Alt+F4** (TTY4) - Force warm/night temperature (e.g. 3500K)
+- **Ctrl+Alt+F5** (TTY5) - Force cool/day temperature (6500K)
 
 The gamma settings persist even after switching back to COSMIC!
 
@@ -77,6 +81,12 @@ Just press **Ctrl+Alt+F3** then **Ctrl+Alt+F2** whenever you want to apply:
 - Evening (after 20:00): Warm 3500K applied
 - Morning (after 08:00): Neutral 6500K applied
 
+### Force Override
+
+Override time-based logic anytime:
+- **Ctrl+Alt+F4** then **Ctrl+Alt+F2** - Force warm (NIGHT_TEMP)
+- **Ctrl+Alt+F5** then **Ctrl+Alt+F2** - Force cool (DAY_TEMP)
+
 ### Manual Usage
 
 You can also use the tool directly (requires TTY):
@@ -103,6 +113,8 @@ sudo nano /etc/default/drm-colortemp.conf
 | SUNSET_HOUR | 20 | When to switch to night mode (24h) |
 | SUNRISE_HOUR | 8 | When to switch to day mode (24h) |
 | MONITOR_TTY | 3 | Which TTY to monitor for auto-apply |
+| WARM_TTY | 4 | TTY to force warm (night) temperature |
+| COOL_TTY | 5 | TTY to force cool (day) temperature |
 | NOTIFY_ENABLED | 0 | Enable desktop notifications (0/1) |
 | NOTIFY_USER | "" | Username to send notifications to |
 | NOTIFY_MINUTES_BEFORE | 5 | Minutes before sunset/sunrise to notify |

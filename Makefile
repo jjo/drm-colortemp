@@ -35,6 +35,55 @@ $(DAEMON): $(DAEMON_OBJ)
 
 clean:
 	rm -f $(TOOL) $(DAEMON) *.o
+	rm -rf build-deb
+
+# Debian package
+VERSION ?= 0.0.0
+ARCH ?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+DEB_PKG = drm-colortemp_$(VERSION)_$(ARCH)
+DEB_DIR = build-deb/$(DEB_PKG)
+
+deb: $(TOOL) $(DAEMON)
+	rm -rf build-deb
+	# Binaries
+	install -D -m 755 $(TOOL) $(DEB_DIR)/usr/bin/$(TOOL)
+	install -D -m 755 $(DAEMON) $(DEB_DIR)/usr/bin/$(DAEMON)
+	install -D -m 755 drm-colortemp-notify.sh $(DEB_DIR)/usr/bin/drm-colortemp-notify.sh
+	install -D -m 755 drm-colortemp-notifier.sh $(DEB_DIR)/usr/bin/drm-colortemp-notifier.sh
+	# Config
+	install -D -m 644 drm-colortemp.conf $(DEB_DIR)/etc/default/drm-colortemp.conf
+	# Systemd services
+	install -D -m 644 drm-colortemp-daemon.service $(DEB_DIR)/usr/lib/systemd/system/drm-colortemp-daemon.service
+	install -D -m 644 drm-colortemp-notifier.service $(DEB_DIR)/usr/lib/systemd/system/drm-colortemp-notifier.service
+	# Docs
+	install -D -m 644 README.md $(DEB_DIR)/usr/share/doc/drm-colortemp/README.md
+	# Adjust paths from /usr/local/bin to /usr/bin for deb packaging
+	sed -i 's|/usr/local/bin|/usr/bin|g' \
+		$(DEB_DIR)/usr/lib/systemd/system/drm-colortemp-daemon.service \
+		$(DEB_DIR)/usr/lib/systemd/system/drm-colortemp-notifier.service \
+		$(DEB_DIR)/usr/bin/drm-colortemp-notifier.sh
+	# DEBIAN control files
+	mkdir -p $(DEB_DIR)/DEBIAN
+	echo "Package: drm-colortemp" > $(DEB_DIR)/DEBIAN/control
+	echo "Version: $(VERSION)" >> $(DEB_DIR)/DEBIAN/control
+	echo "Architecture: $(ARCH)" >> $(DEB_DIR)/DEBIAN/control
+	echo "Maintainer: jjo <jjo@users.noreply.github.com>" >> $(DEB_DIR)/DEBIAN/control
+	echo "Depends: libdrm2" >> $(DEB_DIR)/DEBIAN/control
+	echo "Recommends: libnotify-bin" >> $(DEB_DIR)/DEBIAN/control
+	echo "Section: utils" >> $(DEB_DIR)/DEBIAN/control
+	echo "Priority: optional" >> $(DEB_DIR)/DEBIAN/control
+	echo "Homepage: https://github.com/jjo/drm-colortemp" >> $(DEB_DIR)/DEBIAN/control
+	echo "Description: DRM color temperature control for COSMIC DE" >> $(DEB_DIR)/DEBIAN/control
+	echo " Screen color temperature adjustment tool for COSMIC Desktop Environment," >> $(DEB_DIR)/DEBIAN/control
+	echo " working around missing wlr-gamma-control-unstable-v1 protocol support." >> $(DEB_DIR)/DEBIAN/control
+	echo " Provides automatic time-based switching and manual TTY-triggered overrides." >> $(DEB_DIR)/DEBIAN/control
+	echo "/etc/default/drm-colortemp.conf" > $(DEB_DIR)/DEBIAN/conffiles
+	printf '#!/bin/sh\nset -e\nif [ "$$1" = "configure" ]; then\n    systemctl daemon-reload || true\nfi\n' > $(DEB_DIR)/DEBIAN/postinst
+	printf '#!/bin/sh\nset -e\nif [ "$$1" = "remove" ] || [ "$$1" = "purge" ]; then\n    systemctl stop drm-colortemp-daemon 2>/dev/null || true\n    systemctl stop drm-colortemp-notifier 2>/dev/null || true\n    systemctl disable drm-colortemp-daemon 2>/dev/null || true\n    systemctl disable drm-colortemp-notifier 2>/dev/null || true\n    systemctl daemon-reload || true\nfi\n' > $(DEB_DIR)/DEBIAN/prerm
+	chmod 755 $(DEB_DIR)/DEBIAN/postinst $(DEB_DIR)/DEBIAN/prerm
+	dpkg-deb --build --root-owner-group $(DEB_DIR) build-deb/
+	@echo ""
+	@echo "✓ Built build-deb/$(DEB_PKG).deb"
 
 # Main daemon install (non-interactive)
 install: $(TOOL) $(DAEMON)
@@ -93,4 +142,4 @@ uninstall:
 	@echo ""
 	@echo "✓ Uninstall complete!"
 
-.PHONY: all clean install install-notifier uninstall
+.PHONY: all clean install install-notifier uninstall deb

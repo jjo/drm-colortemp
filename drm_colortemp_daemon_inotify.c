@@ -38,6 +38,8 @@ typedef struct {
     int sunset_hour;
     int sunrise_hour;
     int monitor_tty;
+    int warm_tty;
+    int cool_tty;
     int check_interval;
     int verbose;
     double latitude;
@@ -115,6 +117,8 @@ int load_config(const char *filename) {
     config.sunset_hour = 20;
     config.sunrise_hour = 8;
     config.monitor_tty = 3;
+    config.warm_tty = 4;
+    config.cool_tty = 5;
     config.check_interval = 1;
     config.verbose = 0;
     config.has_location = 0;
@@ -154,6 +158,10 @@ int load_config(const char *filename) {
             config.sunrise_hour = atoi(value);
         } else if (strcmp(key, "MONITOR_TTY") == 0) {
             config.monitor_tty = atoi(value);
+        } else if (strcmp(key, "WARM_TTY") == 0) {
+            config.warm_tty = atoi(value);
+        } else if (strcmp(key, "COOL_TTY") == 0) {
+            config.cool_tty = atoi(value);
         } else if (strcmp(key, "CHECK_INTERVAL") == 0) {
             config.check_interval = atoi(value);
         } else if (strcmp(key, "VERBOSE") == 0) {
@@ -174,7 +182,8 @@ int load_config(const char *filename) {
         log_msg("INFO", "Device: %s", config.device);
         log_msg("INFO", "Day temp: %dK, Night temp: %dK", config.day_temp, config.night_temp);
         log_msg("INFO", "Sunset: %02d:00, Sunrise: %02d:00", config.sunset_hour, config.sunrise_hour);
-        log_msg("INFO", "Monitor TTY: %d", config.monitor_tty);
+        log_msg("INFO", "Monitor TTY: %d, Warm TTY: %d, Cool TTY: %d",
+                config.monitor_tty, config.warm_tty, config.cool_tty);
         if (config.has_location) {
             log_msg("INFO", "Location: %.4f, %.4f", config.latitude, config.longitude);
         }
@@ -402,7 +411,8 @@ int apply_temperature(int temp) {
 void daemon_loop(const char *config_file) {
     log_msg("INFO", "Daemon started");
     log_msg("INFO", "Monitoring config file: %s", config_file);
-    log_msg("INFO", "Monitoring TTY %d", config.monitor_tty);
+    log_msg("INFO", "Monitoring TTY %d (auto), TTY %d (force warm), TTY %d (force cool)",
+            config.monitor_tty, config.warm_tty, config.cool_tty);
     log_msg("INFO", "Day: %dK, Night: %dK", config.day_temp, config.night_temp);
     log_msg("INFO", "Sunset: %02d:00, Sunrise: %02d:00", 
             config.sunset_hour, config.sunrise_hour);
@@ -431,20 +441,20 @@ void daemon_loop(const char *config_file) {
     free(config_path);
     
     int last_applied_temp = 0;
-    int was_on_target_tty = 0;
+    int prev_vt = 0;
     time_t last_check = 0;
-    
+
     while (running) {
         // Check for config file changes
         if (watch_fd >= 0) {
             char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
             ssize_t len = read(inotify_fd, buf, sizeof(buf));
-            
+
             if (len > 0) {
                 const struct inotify_event *event;
                 for (char *ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
                     event = (const struct inotify_event *)ptr;
-                    
+
                     // Check if the event is for our config file
                     if (event->len > 0 && strcmp(event->name, filename) == 0) {
                         if (event->mask & (IN_CREATE | IN_MOVED_TO | IN_MODIFY | IN_CLOSE_WRITE)) {
@@ -460,37 +470,51 @@ void daemon_loop(const char *config_file) {
                 }
             }
         }
-        
+
         // Check VT state
         int active_vt = get_active_vt();
-        
+
         if (active_vt < 0) {
             sleep(config.check_interval);
             continue;
         }
-        
-        int is_on_target_tty = (active_vt == config.monitor_tty);
-        
-        // Detect switch TO our TTY
-        if (is_on_target_tty && !was_on_target_tty) {
-            log_msg("INFO", "User switched to TTY%d", config.monitor_tty);
-            
-            int current_temp = calculate_temperature();
-            
-            if (current_temp != last_applied_temp || last_applied_temp == 0) {
-                log_msg("INFO", "Applying temperature: %dK", current_temp);
-                
-                if (apply_temperature(current_temp) == 0) {
-                    log_msg("INFO", "Successfully applied %dK", current_temp);
-                    last_applied_temp = current_temp;
+
+        // Detect VT switch
+        if (active_vt != prev_vt) {
+            int target_temp = 0;
+
+            if (active_vt == config.monitor_tty) {
+                // Switch to monitor TTY: apply time-based temperature
+                target_temp = calculate_temperature();
+                log_msg("INFO", "User switched to TTY%d (auto)", config.monitor_tty);
+            } else if (active_vt == config.warm_tty) {
+                // Switch to warm TTY: force warm (night) temperature
+                target_temp = config.night_temp;
+                log_msg("INFO", "User switched to TTY%d (force warm: %dK)",
+                        config.warm_tty, target_temp);
+            } else if (active_vt == config.cool_tty) {
+                // Switch to cool TTY: force cool (day) temperature
+                target_temp = config.day_temp;
+                log_msg("INFO", "User switched to TTY%d (force cool: %dK)",
+                        config.cool_tty, target_temp);
+            }
+
+            if (target_temp > 0 && (target_temp != last_applied_temp || last_applied_temp == 0)) {
+                log_msg("INFO", "Applying temperature: %dK", target_temp);
+
+                if (apply_temperature(target_temp) == 0) {
+                    log_msg("INFO", "Successfully applied %dK", target_temp);
+                    last_applied_temp = target_temp;
                 } else {
                     log_msg("ERROR", "Failed to apply temperature");
                 }
             }
+
+            prev_vt = active_vt;
         }
-        
-        was_on_target_tty = is_on_target_tty;
-        
+
+        int is_on_target_tty = (active_vt == config.monitor_tty);
+
         // Periodic check for time-based changes (every minute)
         time_t now = time(NULL);
         if (now - last_check >= 60) {
@@ -503,7 +527,7 @@ void daemon_loop(const char *config_file) {
             }
             last_check = now;
         }
-        
+
         sleep(config.check_interval);
     }
     

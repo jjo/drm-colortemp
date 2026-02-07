@@ -9,23 +9,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libdrm-dev linux-libc-dev
-    
+
     - name: Build binaries
       run: make
-    
+
     - name: Test tool help
       run: |
         ./drm_colortemp -h
         ./drm_colortemp_daemon -h
-    
+
+    - name: Build deb package
+      run: make deb VERSION=0.0.0-dev
+
+    - name: Verify deb package
+      run: dpkg-deb --info build-deb/*.deb
+
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
@@ -33,4 +39,11 @@ jobs:
         path: |
           drm_colortemp
           drm_colortemp_daemon
+        retention-days: 30
+
+    - name: Upload deb package
+      uses: actions/upload-artifact@v4
+      with:
+        name: drm-colortemp-deb
+        path: build-deb/*.deb
         retention-days: 30
