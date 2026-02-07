@@ -1,0 +1,31 @@
+# Compiled binaries
+drm_colortemp
+drm_colortemp_daemon
+*.o
+*.a
+*.so
+
+# Build artifacts
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Test files
+test_*

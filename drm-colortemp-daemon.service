@@ -1,0 +1,20 @@
+[Unit]
+Description=DRM Color Temperature TTY Daemon
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/drm_colortemp_daemon
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Reload config on SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Run with elevated privileges (needed for DRM access)
+User=root
+
+[Install]
+WantedBy=multi-user.target

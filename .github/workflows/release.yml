@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libdrm-dev linux-libc-dev
+    
+    - name: Build binaries
+      run: make
+    
+    - name: Create release package
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        PACKAGE_NAME="drm-colortemp-${VERSION}"
+        mkdir -p "${PACKAGE_NAME}"
+        
+        # Copy binaries
+        cp drm_colortemp drm_colortemp_daemon "${PACKAGE_NAME}/"
+        
+        # Copy source and config files
+        cp *.c *.conf *.sh Makefile README.md NOTIFICATIONS.md "${PACKAGE_NAME}/"
+        
+        # Copy systemd services
+        cp *.service "${PACKAGE_NAME}/"
+        
+        # Create tarball
+        tar czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
+        
+        # Create checksums
+        sha256sum "${PACKAGE_NAME}.tar.gz" > "${PACKAGE_NAME}.tar.gz.sha256"
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          drm-colortemp-*.tar.gz
+          drm-colortemp-*.tar.gz.sha256
+        body: |
+          ## Installation
+          
+          ```bash
+          # Download and extract
+          tar xzf drm-colortemp-*.tar.gz
+          cd drm-colortemp-*
+          
+          # Install dependencies
+          sudo apt install build-essential libdrm-dev linux-libc-dev libnotify-bin
+          
+          # If you downloaded pre-built binaries, skip to install
+          # Otherwise compile first:
+          make
+          
+          # Install
+          sudo ./install_daemon.sh
+          ```
+          
+          ## What's New
+          
+          See [README.md](README.md) for full documentation.
+          
+          ## Requirements
+          
+          - Pop!_OS / Ubuntu with COSMIC DE
+          - Linux kernel with DRM/KMS support
+          - Root access
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

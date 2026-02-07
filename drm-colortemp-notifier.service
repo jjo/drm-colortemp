@@ -1,0 +1,18 @@
+[Unit]
+Description=DRM Color Temperature Notification Service
+Documentation=man:drm_colortemp(1)
+After=graphical.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/drm-colortemp-notifier.sh
+Restart=always
+RestartSec=60
+StandardOutput=journal
+StandardError=journal
+
+# Run as root (needs to switch to user context for notifications)
+User=root
+
+[Install]
+WantedBy=graphical.target
