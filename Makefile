@@ -11,15 +11,16 @@ TOOL_SRC = drm_colortemp.c drm_device.c
 DAEMON_SRC = drm_colortemp_daemon_inotify.c drm_device.c
 
 # Object files
-TOOL_OBJ = drm_colortemp.o drm_device.o
-DAEMON_OBJ = drm_colortemp_daemon_inotify.o drm_device.o
+TOOL_OBJ = drm_colortemp.o drm_colortemp_utils.o drm_device.o
+DAEMON_OBJ = drm_colortemp_daemon_inotify.o drm_colortemp_utils.o drm_device.o
 
 all: $(TOOL) $(DAEMON)
 
 # Header dependencies
 drm_device.o: drm_device.h
-drm_colortemp.o: drm_device.h
-drm_colortemp_daemon_inotify.o: drm_device.h
+drm_colortemp.o: drm_device.h drm_colortemp_utils.h
+drm_colortemp_daemon_inotify.o: drm_device.h drm_colortemp_utils.h
+drm_colortemp_utils.o: drm_colortemp_utils.h
 
 # Compile object files
 %.o: %.c
