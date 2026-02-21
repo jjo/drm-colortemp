@@ -22,10 +22,10 @@
 #include <sys/inotify.h>
 #include <sys/select.h>
 #include <linux/vt.h>
-#include <math.h>
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
 #include "drm_device.h"
+#include "drm_colortemp_utils.h"
 
 #define CONFIG_FILE "/etc/default/drm-colortemp.conf"
 #define MAX_LINE 256
@@ -225,72 +225,25 @@ int calculate_temperature() {
     return config.day_temp;
 }
 
-// Color temperature to RGB
-void temp_to_rgb(int temp, double *red, double *green, double *blue) {
-    double temp_kelvin = temp / 100.0;
-    
-    if (temp_kelvin <= 66) {
-        *red = 1.0;
-    } else {
-        double r = temp_kelvin - 60;
-        r = 329.698727446 * pow(r, -0.1332047592);
-        *red = r / 255.0;
-        if (*red < 0) *red = 0;
-        if (*red > 1) *red = 1;
-    }
-    
-    if (temp_kelvin <= 66) {
-        double g = temp_kelvin;
-        g = 99.4708025861 * log(g) - 161.1195681661;
-        *green = g / 255.0;
-    } else {
-        double g = temp_kelvin - 60;
-        g = 288.1221695283 * pow(g, -0.0755148492);
-        *green = g / 255.0;
-    }
-    if (*green < 0) *green = 0;
-    if (*green > 1) *green = 1;
-    
-    if (temp_kelvin >= 66) {
-        *blue = 1.0;
-    } else if (temp_kelvin <= 19) {
-        *blue = 0.0;
-    } else {
-        double b = temp_kelvin - 10;
-        b = 138.5177312231 * log(b) - 305.0447927307;
-        *blue = b / 255.0;
-        if (*blue < 0) *blue = 0;
-        if (*blue > 1) *blue = 1;
-    }
-}
-
 // Set gamma using ioctl
 int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp) {
     uint16_t *red_lut, *green_lut, *blue_lut;
-    double r_mult, g_mult, b_mult;
-    
+
     if (gamma_size <= 0) return -1;
-    
+
     red_lut = calloc(gamma_size, sizeof(uint16_t));
     green_lut = calloc(gamma_size, sizeof(uint16_t));
     blue_lut = calloc(gamma_size, sizeof(uint16_t));
-    
+
     if (!red_lut || !green_lut || !blue_lut) {
         free(red_lut);
         free(green_lut);
         free(blue_lut);
         return -1;
     }
-    
-    temp_to_rgb(temp, &r_mult, &g_mult, &b_mult);
-    
-    for (int i = 0; i < gamma_size; i++) {
-        double value = (double)i / (gamma_size - 1);
-        red_lut[i] = (uint16_t)(value * r_mult * 65535.0);
-        green_lut[i] = (uint16_t)(value * g_mult * 65535.0);
-        blue_lut[i] = (uint16_t)(value * b_mult * 65535.0);
-    }
-    
+
+    fill_gamma_luts(gamma_size, temp, 1.0, red_lut, green_lut, blue_lut);
+
     struct drm_mode_crtc_lut lut = {
         .crtc_id = crtc_id,
         .gamma_size = gamma_size,
@@ -298,13 +251,13 @@ int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp) {
         .green = (uint64_t)(uintptr_t)green_lut,
         .blue = (uint64_t)(uintptr_t)blue_lut,
     };
-    
+
     int ret = ioctl(fd, DRM_IOCTL_MODE_SETGAMMA, &lut);
-    
+
     free(red_lut);
     free(green_lut);
     free(blue_lut);
-    
+
     return ret;
 }
 
@@ -425,11 +378,13 @@ void daemon_loop(const char *config_file) {
         return;
     }
     
-    // Get directory and filename
-    char *config_path = strdup(config_file);
-    char *config_dir = dirname(config_path);
-    char *filename = basename((char *)config_file);
-    
+    // Get directory and filename - use separate strdup for each since
+    // dirname() and basename() may modify their argument
+    char *path_for_dir = strdup(config_file);
+    char *path_for_base = strdup(config_file);
+    char *config_dir = dirname(path_for_dir);
+    char *filename = basename(path_for_base);
+
     int watch_fd = inotify_add_watch(inotify_fd, config_dir, IN_CREATE | IN_MOVED_TO | IN_MODIFY | IN_CLOSE_WRITE);
     if (watch_fd < 0) {
         log_msg("WARN", "Cannot watch config directory %s: %s", config_dir, strerror(errno));
@@ -437,8 +392,6 @@ void daemon_loop(const char *config_file) {
     } else {
         log_msg("INFO", "Watching directory: %s", config_dir);
     }
-    
-    free(config_path);
     
     int last_applied_temp = 0;
     int prev_vt = 0;
@@ -531,11 +484,14 @@ void daemon_loop(const char *config_file) {
         sleep(config.check_interval);
     }
     
+    free(path_for_dir);
+    free(path_for_base);
+
     if (watch_fd >= 0) {
         inotify_rm_watch(inotify_fd, watch_fd);
     }
     close(inotify_fd);
-    
+
     log_msg("INFO", "Daemon stopped");
 }
 

@@ -4,72 +4,27 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <math.h>
 #include <errno.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include "drm_device.h"
+#include "drm_colortemp_utils.h"
 
 #define GAMMA_SIZE 256
 
-// Color temperature algorithm based on Tanner Helland's work
-// http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
-void temp_to_rgb(int temp, double *red, double *green, double *blue) {
-    double temp_kelvin = temp / 100.0;
-    
-    // Red calculation
-    if (temp_kelvin <= 66) {
-        *red = 1.0;
-    } else {
-        double r = temp_kelvin - 60;
-        r = 329.698727446 * pow(r, -0.1332047592);
-        *red = r / 255.0;
-        if (*red < 0) *red = 0;
-        if (*red > 1) *red = 1;
-    }
-    
-    // Green calculation
-    if (temp_kelvin <= 66) {
-        double g = temp_kelvin;
-        g = 99.4708025861 * log(g) - 161.1195681661;
-        *green = g / 255.0;
-    } else {
-        double g = temp_kelvin - 60;
-        g = 288.1221695283 * pow(g, -0.0755148492);
-        *green = g / 255.0;
-    }
-    if (*green < 0) *green = 0;
-    if (*green > 1) *green = 1;
-    
-    // Blue calculation
-    if (temp_kelvin >= 66) {
-        *blue = 1.0;
-    } else if (temp_kelvin <= 19) {
-        *blue = 0.0;
-    } else {
-        double b = temp_kelvin - 10;
-        b = 138.5177312231 * log(b) - 305.0447927307;
-        *blue = b / 255.0;
-        if (*blue < 0) *blue = 0;
-        if (*blue > 1) *blue = 1;
-    }
-}
-
 int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp, double brightness) {
     uint16_t *red_lut, *green_lut, *blue_lut;
-    double r_mult, g_mult, b_mult;
-    int i;
-    
+
     if (gamma_size <= 0) {
         fprintf(stderr, "Invalid gamma size: %d\n", gamma_size);
         return -1;
     }
-    
+
     // Allocate gamma ramps
     red_lut = malloc(gamma_size * sizeof(uint16_t));
     green_lut = malloc(gamma_size * sizeof(uint16_t));
     blue_lut = malloc(gamma_size * sizeof(uint16_t));
-    
+
     if (!red_lut || !green_lut || !blue_lut) {
         fprintf(stderr, "Failed to allocate gamma tables\n");
         free(red_lut);
@@ -77,31 +32,16 @@ int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp, double br
         free(blue_lut);
         return -1;
     }
-    
-    // Get RGB multipliers for temperature
-    temp_to_rgb(temp, &r_mult, &g_mult, &b_mult);
-    
-    // Apply brightness
-    r_mult *= brightness;
-    g_mult *= brightness;
-    b_mult *= brightness;
-    
-    // Fill gamma ramps
-    for (i = 0; i < gamma_size; i++) {
-        double value = (double)i / (gamma_size - 1);
-        
-        red_lut[i] = (uint16_t)(value * r_mult * 65535.0);
-        green_lut[i] = (uint16_t)(value * g_mult * 65535.0);
-        blue_lut[i] = (uint16_t)(value * b_mult * 65535.0);
-    }
-    
+
+    fill_gamma_luts(gamma_size, temp, brightness, red_lut, green_lut, blue_lut);
+
     // Set gamma
     int ret = drmModeCrtcSetGamma(fd, crtc_id, gamma_size, red_lut, green_lut, blue_lut);
-    
+
     free(red_lut);
     free(green_lut);
     free(blue_lut);
-    
+
     return ret;
 }
 

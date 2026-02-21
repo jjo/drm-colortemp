@@ -36,8 +36,8 @@ if [ -z "$NOTIFY_USER" ]; then
 fi
 
 echo "Notifier started for user: $NOTIFY_USER"
-echo "Sunset: ${SUNSET_HOUR}:00 (notify at $(date -d "${SUNSET_HOUR}:00 - ${NOTIFY_MINUTES_BEFORE} minutes" +%H:%M))"
-echo "Sunrise: ${SUNRISE_HOUR}:00 (notify at $(date -d "${SUNRISE_HOUR}:00 - ${NOTIFY_MINUTES_BEFORE} minutes" +%H:%M))"
+echo "Sunset: ${SUNSET_HOUR}:00 (notify at $(date -d "${SUNSET_HOUR}:00 today ${NOTIFY_MINUTES_BEFORE} minutes ago" +%H:%M))"
+echo "Sunrise: ${SUNRISE_HOUR}:00 (notify at $(date -d "${SUNRISE_HOUR}:00 today ${NOTIFY_MINUTES_BEFORE} minutes ago" +%H:%M))"
 
 SUNSET_NOTIFIED=0
 SUNRISE_NOTIFIED=0
