@@ -24,11 +24,22 @@ int drm_open_device(const char *preferred_device, char *device_out, size_t devic
 
 /**
  * Check if a DRM device exists and is accessible
- * 
+ *
  * @param device Device path to check
  * @return 1 if accessible, 0 otherwise
  */
 int drm_device_accessible(const char *device);
+
+/**
+ * Check if a DRM device has CRTCs (display outputs)
+ *
+ * Some GPUs (e.g. NVIDIA with proprietary driver) may be accessible
+ * but expose no CRTCs via the legacy DRM API.
+ *
+ * @param device Device path to check
+ * @return 1 if device has CRTCs, 0 otherwise
+ */
+int drm_device_has_crtcs(const char *device);
 
 /**
  * Find first available DRM card device
