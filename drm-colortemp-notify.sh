@@ -20,10 +20,10 @@ fi
 
 # Detect DRM device (use same logic as main tool)
 DEVICE=""
-if [ -r "/dev/dri/card1" ]; then
-    DEVICE="/dev/dri/card1"
-elif [ -r "/dev/dri/card0" ]; then
+if [ -r "/dev/dri/card0" ]; then
     DEVICE="/dev/dri/card0"
+elif [ -r "/dev/dri/card1" ]; then
+    DEVICE="/dev/dri/card1"
 else
     # Search for first available card
     for i in {0..9}; do
@@ -55,11 +55,11 @@ for DISPLAY_NUM in 0 1; do
             if [ "$MODE" = "night" ]; then
                 ICON="weather-clear-night"
                 TITLE="🌙 Night Mode Ready"
-                MESSAGE="Press Ctrl+Alt+F3 then F2 to apply warm ${TEMP}K${DEVICE_MSG}"
+                MESSAGE="Press Ctrl+Alt+F3 then F1 to apply warm ${TEMP}K${DEVICE_MSG}"
             else
                 ICON="weather-clear"
                 TITLE="☀️ Day Mode Ready"  
-                MESSAGE="Press Ctrl+Alt+F3 then F2 to apply ${TEMP}K${DEVICE_MSG}"
+                MESSAGE="Press Ctrl+Alt+F3 then F1 to apply ${TEMP}K${DEVICE_MSG}"
             fi
             
             # Send notification as user
@@ -73,6 +73,6 @@ for DISPLAY_NUM in 0 1; do
 done
 
 # Fallback: try without specific DBUS (might work on some systems)
-su "$USERNAME" -c "notify-send -i 'weather-clear-night' -u normal -t 10000 'Color Temperature' 'Time to adjust: ${TEMP}K${DEVICE_MSG}. Press Ctrl+Alt+F3 then F2'" 2>/dev/null
+su "$USERNAME" -c "notify-send -i 'weather-clear-night' -u normal -t 10000 'Color Temperature' 'Time to adjust: ${TEMP}K${DEVICE_MSG}. Press Ctrl+Alt+F3 then F1'" 2>/dev/null
 
 exit 0
