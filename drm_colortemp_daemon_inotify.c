@@ -452,7 +452,7 @@ void daemon_loop(const char *config_file) {
                         config.cool_tty, target_temp);
             }
 
-            if (target_temp > 0 && (target_temp != last_applied_temp || last_applied_temp == 0)) {
+            if (target_temp > 0) {
                 log_msg("INFO", "Applying temperature: %dK", target_temp);
 
                 if (apply_temperature(target_temp) == 0) {
