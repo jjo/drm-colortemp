@@ -107,7 +107,8 @@ sudo nano /etc/default/drm-colortemp.conf
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| DEVICE | /dev/dri/card1 | DRM device path |
+| DEVICE | *(auto)* | DRM device — omit to auto-detect all cards with CRTCs |
+| DEVICE1 … DEVICE8 | — | Explicit multi-card setup (see below) |
 | DAY_TEMP | 6500 | Daytime temperature (Kelvin) |
 | NIGHT_TEMP | 3500 | Nighttime temperature (Kelvin) |
 | SUNSET_HOUR | 20 | When to switch to night mode (24h) |
@@ -119,6 +120,23 @@ sudo nano /etc/default/drm-colortemp.conf
 | NOTIFY_USER | "" | Username to send notifications to |
 | NOTIFY_MINUTES_BEFORE | 5 | Minutes before sunset/sunrise to notify |
 | VERBOSE | 0 | Enable verbose logging (0/1) |
+
+### Multi-Card / Device Selection
+
+By default (no `DEVICE` key set), the daemon **auto-detects all DRM cards** that have active CRTCs and applies temperature to all of them simultaneously.
+
+For explicit control:
+
+```ini
+# Single card (legacy syntax, still supported)
+DEVICE="/dev/dri/card1"
+
+# Multi-card: apply to two GPUs at once
+DEVICE1="/dev/dri/card0"
+DEVICE2="/dev/dri/card1"
+```
+
+Up to 8 devices (`DEVICE1`–`DEVICE8`) are supported. If both `DEVICE` and `DEVICE1` are specified, `DEVICE1` takes the slot 1 position.
 
 ### Color Temperature Guide
 
@@ -183,8 +201,9 @@ sudo journalctl -u drm-colortemp-notifier -f
 ```bash
 ls -la /dev/dri/
 # Look for card0, card1, etc.
-# Update DEVICE in /etc/default/drm-colortemp.conf
 ```
+
+The daemon auto-detects all cards with CRTCs when no `DEVICE` is configured. To target specific cards, set `DEVICE1`, `DEVICE2`, etc. in `/etc/default/drm-colortemp.conf`.
 
 ## Uninstallation
 
