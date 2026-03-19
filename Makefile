@@ -34,8 +34,21 @@ $(TOOL): $(TOOL_OBJ)
 $(DAEMON): $(DAEMON_OBJ)
 	$(CC) $(CFLAGS) $(DAEMON_OBJ) -o $(DAEMON) $(LIBS)
 
+# Test binary
+TEST = test_config
+TEST_DAEMON_OBJ = drm_colortemp_daemon_inotify_test.o
+
+$(TEST): test_config.c $(TEST_DAEMON_OBJ) drm_colortemp_utils.o drm_device.o
+	$(CC) $(CFLAGS) -DTEST_BUILD $^ -o $@ $(LIBS)
+
+drm_colortemp_daemon_inotify_test.o: drm_colortemp_daemon_inotify.c drm_device.h drm_colortemp_utils.h
+	$(CC) $(CFLAGS) -DTEST_BUILD -c $< -o $@
+
+test: $(TEST)
+	./$(TEST)
+
 clean:
-	rm -f $(TOOL) $(DAEMON) *.o
+	rm -f $(TOOL) $(DAEMON) $(TEST) *.o
 	rm -rf build-deb
 
 # Debian package

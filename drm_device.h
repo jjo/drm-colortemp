@@ -43,11 +43,23 @@ int drm_device_has_crtcs(const char *device);
 
 /**
  * Find first available DRM card device
- * 
+ *
  * @param device_out Buffer to store device path (min 256 bytes)
  * @param device_out_size Size of device_out buffer
  * @return 0 on success, -1 if no device found
  */
 int drm_find_device(char *device_out, size_t device_out_size);
+
+/**
+ * Find all DRM card devices that have CRTCs
+ *
+ * Scans /dev/dri/card0 through card9 and collects every device
+ * that has at least one CRTC (i.e. can drive a display).
+ *
+ * @param devices  Array of device path buffers, each 256 bytes
+ * @param max_devices Maximum number of devices to return
+ * @return Number of devices found (0 if none)
+ */
+int drm_find_all_devices(char (*devices)[256], int max_devices);
 
 #endif /* DRM_DEVICE_H */
