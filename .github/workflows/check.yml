@@ -23,6 +23,7 @@ jobs:
         gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_device.c -o /dev/null
         gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_colortemp.c -o /dev/null
         gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_colortemp_daemon_inotify.c -o /dev/null
+        gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -DTEST_BUILD -c drm_colortemp_daemon_inotify.c -o /dev/null
     
     - name: Check shell scripts
       run: |

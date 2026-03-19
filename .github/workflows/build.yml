@@ -21,6 +21,9 @@ jobs:
     - name: Build binaries
       run: make
 
+    - name: Run unit tests
+      run: make test
+
     - name: Test tool help
       run: |
         ./drm_colortemp -h
