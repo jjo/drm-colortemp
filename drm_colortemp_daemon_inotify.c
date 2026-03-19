@@ -29,10 +29,12 @@
 
 #define CONFIG_FILE "/etc/default/drm-colortemp.conf"
 #define MAX_LINE 256
+#define MAX_DEVICES 8
 
 // Configuration
 typedef struct {
-    char device[256];
+    char devices[MAX_DEVICES][256];
+    int num_devices;
     int day_temp;
     int night_temp;
     int sunset_hour;
@@ -50,7 +52,7 @@ typedef struct {
 // Global state
 static volatile int running = 1;
 static volatile int reload_config = 0;
-static config_t config;
+config_t config;
 
 // Signal handler
 void signal_handler(int signum) {
@@ -111,7 +113,8 @@ int load_config(const char *filename) {
     }
     
     // Set defaults
-    strncpy(config.device, "/dev/dri/card1", sizeof(config.device) - 1);
+    memset(config.devices, 0, sizeof(config.devices));
+    config.num_devices = 0;
     config.day_temp = 6500;
     config.night_temp = 3500;
     config.sunset_hour = 20;
@@ -147,7 +150,12 @@ int load_config(const char *filename) {
         value = remove_quotes(value);
         
         if (strcmp(key, "DEVICE") == 0) {
-            strncpy(config.device, value, sizeof(config.device) - 1);
+            strncpy(config.devices[0], value, sizeof(config.devices[0]) - 1);
+            if (config.num_devices < 1) config.num_devices = 1;
+        } else if (strncmp(key, "DEVICE", 6) == 0 && key[6] >= '1' && key[6] <= '0' + MAX_DEVICES && key[7] == '\0') {
+            int idx = key[6] - '1';
+            strncpy(config.devices[idx], value, sizeof(config.devices[idx]) - 1);
+            if (config.num_devices < idx + 1) config.num_devices = idx + 1;
         } else if (strcmp(key, "DAY_TEMP") == 0) {
             config.day_temp = atoi(value);
         } else if (strcmp(key, "NIGHT_TEMP") == 0) {
@@ -176,10 +184,26 @@ int load_config(const char *filename) {
     }
     
     fclose(f);
-    
+
+    // Auto-detect devices if none explicitly configured
+    if (config.num_devices == 0) {
+        int found = drm_find_all_devices(config.devices, MAX_DEVICES);
+        if (found > 0) {
+            config.num_devices = found;
+            log_msg("INFO", "Auto-detected %d DRM device(s)", found);
+        } else {
+            // Last-resort fallback: use first accessible device
+            if (drm_find_device(config.devices[0], sizeof(config.devices[0])) == 0) {
+                config.num_devices = 1;
+            }
+        }
+    }
+
     log_msg("INFO", "Configuration loaded from %s", filename);
     if (config.verbose) {
-        log_msg("INFO", "Device: %s", config.device);
+        for (int i = 0; i < config.num_devices; i++) {
+            log_msg("INFO", "Device[%d]: %s", i, config.devices[i]);
+        }
         log_msg("INFO", "Day temp: %dK, Night temp: %dK", config.day_temp, config.night_temp);
         log_msg("INFO", "Sunset: %02d:00, Sunrise: %02d:00", config.sunset_hour, config.sunrise_hour);
         log_msg("INFO", "Monitor TTY: %d, Warm TTY: %d, Cool TTY: %d",
@@ -277,87 +301,85 @@ int get_crtc_info(int fd, uint32_t crtc_id, int *gamma_size, int *mode_valid) {
     return 0;
 }
 
-// Apply temperature to all displays
-int apply_temperature(int temp) {
-    char actual_device[256];
-    int fd = drm_open_device(config.device, actual_device, sizeof(actual_device));
-    if (fd < 0) {
-        log_msg("ERROR", "Failed to open DRM device: %s", strerror(errno));
-        return -1;
-    }
-    if (config.verbose && strcmp(actual_device, config.device) != 0) {
-        log_msg("INFO", "Using device %s", actual_device);
-    }
-    
-    // Get resources
+// Apply temperature to all CRTCs on a single DRM device fd
+static int apply_temperature_to_fd(int fd, const char *device_name, int temp) {
     struct drm_mode_card_res res = {0};
     if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) {
-        log_msg("ERROR", "Failed to get DRM resources");
-        close(fd);
+        log_msg("ERROR", "Failed to get DRM resources for %s", device_name);
         return -1;
     }
-    
+
     if (res.count_crtcs == 0) {
-        log_msg("ERROR", "No CRTCs found");
-        close(fd);
+        log_msg("ERROR", "No CRTCs found on %s", device_name);
         return -1;
     }
-    
-    // Allocate arrays
+
     uint32_t *crtcs = calloc(res.count_crtcs, sizeof(uint32_t));
     uint32_t *fbs = calloc(res.count_fbs, sizeof(uint32_t));
     uint32_t *connectors = calloc(res.count_connectors, sizeof(uint32_t));
     uint32_t *encoders = calloc(res.count_encoders, sizeof(uint32_t));
-    
+
     if (!crtcs) {
-        close(fd);
+        free(fbs); free(connectors); free(encoders);
         return -1;
     }
-    
+
     res.fb_id_ptr = (uint64_t)(uintptr_t)fbs;
     res.crtc_id_ptr = (uint64_t)(uintptr_t)crtcs;
     res.connector_id_ptr = (uint64_t)(uintptr_t)connectors;
     res.encoder_id_ptr = (uint64_t)(uintptr_t)encoders;
-    
+
     if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) {
-        log_msg("ERROR", "Failed to get CRTC list");
-        free(crtcs);
-        free(fbs);
-        free(connectors);
-        free(encoders);
-        close(fd);
+        log_msg("ERROR", "Failed to get CRTC list for %s", device_name);
+        free(crtcs); free(fbs); free(connectors); free(encoders);
         return -1;
     }
-    
+
     int success_count = 0;
-    
+
     for (uint32_t i = 0; i < res.count_crtcs; i++) {
         uint32_t crtc_id = crtcs[i];
         int gamma_size, mode_valid;
-        
-        if (get_crtc_info(fd, crtc_id, &gamma_size, &mode_valid) < 0) {
+
+        if (get_crtc_info(fd, crtc_id, &gamma_size, &mode_valid) < 0)
             continue;
-        }
-        
-        if (!mode_valid || gamma_size == 0) {
+        if (!mode_valid || gamma_size == 0)
             continue;
-        }
-        
+
         if (set_gamma_temp(fd, crtc_id, gamma_size, temp) == 0) {
             success_count++;
             if (config.verbose) {
-                log_msg("INFO", "Applied %dK to CRTC %u", temp, crtc_id);
+                log_msg("INFO", "Applied %dK to %s CRTC %u", temp, device_name, crtc_id);
             }
         }
     }
-    
-    free(crtcs);
-    free(fbs);
-    free(connectors);
-    free(encoders);
-    close(fd);
-    
+
+    free(crtcs); free(fbs); free(connectors); free(encoders);
     return success_count > 0 ? 0 : -1;
+}
+
+// Apply temperature to all displays on all configured devices
+int apply_temperature(int temp) {
+    int total_success = 0;
+
+    for (int d = 0; d < config.num_devices; d++) {
+        char actual_device[256];
+        int fd = drm_open_device(config.devices[d], actual_device, sizeof(actual_device));
+        if (fd < 0) {
+            log_msg("ERROR", "Failed to open DRM device %s: %s", config.devices[d], strerror(errno));
+            continue;
+        }
+        if (config.verbose && strcmp(actual_device, config.devices[d]) != 0) {
+            log_msg("INFO", "Using device %s (requested %s)", actual_device, config.devices[d]);
+        }
+
+        if (apply_temperature_to_fd(fd, actual_device, temp) == 0)
+            total_success++;
+
+        close(fd);
+    }
+
+    return total_success > 0 ? 0 : -1;
 }
 
 // Main daemon loop with inotify
@@ -506,6 +528,7 @@ void print_usage(const char *prog) {
     printf("Edit %s and changes apply automatically.\n", CONFIG_FILE);
 }
 
+#ifndef TEST_BUILD
 int main(int argc, char *argv[]) {
     const char *config_file = CONFIG_FILE;
     int opt;
@@ -543,6 +566,7 @@ int main(int argc, char *argv[]) {
     
     // Run daemon
     daemon_loop(config_file);
-    
+
     return 0;
 }
+#endif /* TEST_BUILD */

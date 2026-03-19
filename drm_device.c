@@ -76,6 +76,19 @@ int drm_find_device(char *device_out, size_t device_out_size) {
     return -1;
 }
 
+int drm_find_all_devices(char (*devices)[256], int max_devices) {
+    int count = 0;
+    for (int i = 0; i < 10 && count < max_devices; i++) {
+        char device[64];
+        snprintf(device, sizeof(device), "/dev/dri/card%d", i);
+        if (drm_device_has_crtcs(device)) {
+            snprintf(devices[count], 256, "%s", device);
+            count++;
+        }
+    }
+    return count;
+}
+
 int drm_open_device(const char *preferred_device, char *device_out, size_t device_out_size) {
     int fd = -1;
     char actual_device[256] = {0};
