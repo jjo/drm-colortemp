@@ -18,8 +18,8 @@ all: $(TOOL) $(DAEMON)
 
 # Header dependencies
 drm_device.o: drm_device.h
-drm_colortemp.o: drm_device.h drm_colortemp_utils.h
-drm_colortemp_daemon_inotify.o: drm_device.h drm_colortemp_utils.h
+drm_colortemp.o: drm_device.h drm_colortemp_utils.h drm_log.h
+drm_colortemp_daemon_inotify.o: drm_device.h drm_colortemp_utils.h drm_log.h
 drm_colortemp_utils.o: drm_colortemp_utils.h
 
 # Compile object files

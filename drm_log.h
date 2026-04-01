@@ -7,8 +7,8 @@
  *
  * Usage:
  *   drm_log_init("drm_colortemp_daemon", 1);  // verbose=1 -> LOG_DEBUG
- *   LOG_INF("Applied %dK to CRTC %u", temp, crtc_id);
- *   LOG_ERR("Failed to open %s: %s", path, strerror(errno));
+ *   DRM_LOG_INF("Applied %dK to CRTC %u", temp, crtc_id);
+ *   DRM_LOG_ERR("Failed to open %s: %s", path, strerror(errno));
  *   drm_log_close();
  */
 
@@ -78,9 +78,9 @@ static inline void drm_log(int priority, const char *fmt, ...) {
 }
 
 /* Convenience macros */
-#define LOG_ERR(fmt, ...)  drm_log(LOG_ERR,     fmt, ##__VA_ARGS__)
-#define LOG_WRN(fmt, ...)  drm_log(LOG_WARNING,  fmt, ##__VA_ARGS__)
-#define LOG_INF(fmt, ...)  drm_log(LOG_INFO,     fmt, ##__VA_ARGS__)
-#define LOG_DBG(fmt, ...)  do { if (drm_log_verbose) drm_log(LOG_DEBUG, fmt, ##__VA_ARGS__); } while(0)
+#define DRM_LOG_ERR(fmt, ...)  drm_log(LOG_ERR,     fmt, ##__VA_ARGS__)
+#define DRM_LOG_WRN(fmt, ...)  drm_log(LOG_WARNING,  fmt, ##__VA_ARGS__)
+#define DRM_LOG_INF(fmt, ...)  drm_log(LOG_INFO,     fmt, ##__VA_ARGS__)
+#define DRM_LOG_DBG(fmt, ...)  do { if (drm_log_verbose) drm_log(LOG_DEBUG, fmt, ##__VA_ARGS__); } while(0)
 
 #endif /* DRM_LOG_H */
