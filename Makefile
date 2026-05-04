@@ -12,15 +12,16 @@ DAEMON_SRC = drm_colortemp_daemon_inotify.c drm_device.c
 
 # Object files
 TOOL_OBJ = drm_colortemp.o drm_colortemp_utils.o drm_device.o
-DAEMON_OBJ = drm_colortemp_daemon_inotify.o drm_colortemp_utils.o drm_device.o
+DAEMON_OBJ = drm_colortemp_daemon_inotify.o drm_colortemp_utils.o drm_device.o drm_config.o
 
 all: $(TOOL) $(DAEMON)
 
 # Header dependencies
 drm_device.o: drm_device.h
-drm_colortemp.o: drm_device.h drm_colortemp_utils.h
-drm_colortemp_daemon_inotify.o: drm_device.h drm_colortemp_utils.h
+drm_colortemp.o: drm_device.h drm_colortemp_utils.h drm_log.h
+drm_colortemp_daemon_inotify.o: drm_device.h drm_colortemp_utils.h drm_config.h drm_log.h
 drm_colortemp_utils.o: drm_colortemp_utils.h
+drm_config.o: drm_config.h drm_device.h drm_log.h
 
 # Compile object files
 %.o: %.c
@@ -38,10 +39,10 @@ $(DAEMON): $(DAEMON_OBJ)
 TEST = test_config
 TEST_DAEMON_OBJ = drm_colortemp_daemon_inotify_test.o
 
-$(TEST): test_config.c $(TEST_DAEMON_OBJ) drm_colortemp_utils.o drm_device.o
+$(TEST): test_config.c $(TEST_DAEMON_OBJ) drm_colortemp_utils.o drm_device.o drm_config.o
 	$(CC) $(CFLAGS) -DTEST_BUILD $^ -o $@ $(LIBS)
 
-drm_colortemp_daemon_inotify_test.o: drm_colortemp_daemon_inotify.c drm_device.h drm_colortemp_utils.h
+drm_colortemp_daemon_inotify_test.o: drm_colortemp_daemon_inotify.c drm_device.h drm_colortemp_utils.h drm_config.h
 	$(CC) $(CFLAGS) -DTEST_BUILD -c $< -o $@
 
 test: $(TEST)

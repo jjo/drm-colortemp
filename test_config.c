@@ -9,27 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#define MAX_LINE 256
-#define MAX_DEVICES 8
-
-/* Mirrors config_t from daemon - must stay in sync */
-typedef struct {
-    char devices[MAX_DEVICES][256];
-    int num_devices;
-    int day_temp;
-    int night_temp;
-    int sunset_hour;
-    int sunrise_hour;
-    int monitor_tty;
-    int warm_tty;
-    int cool_tty;
-    int check_interval;
-    int verbose;
-    double latitude;
-    double longitude;
-    int has_location;
-} config_t;
+#include "drm_config.h"
 
 /* Defined in drm_colortemp_daemon_inotify.o */
 extern config_t config;
@@ -193,6 +173,57 @@ static void test_device_out_of_range_ignored(void) {
     ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0, "devices[0] == /dev/dri/card0");
 }
 
+/* Phase 4 & 5: new config keys */
+static void test_connector_and_gamma_size(void) {
+    printf("test: CONNECTOR and GAMMA_SIZE config keys\n");
+    char *path = write_conf(
+        "DEVICE=\"/dev/dri/card0\"\n"
+        "CONNECTOR=\"DP-1\"\n"
+        "GAMMA_SIZE=1024\n"
+    );
+    load_config(path);
+    unlink(path); free(path);
+
+    ASSERT(strcmp(config.connector, "DP-1") == 0, "connector == DP-1");
+    ASSERT(config.gamma_size == 1024, "gamma_size == 1024");
+}
+
+static void test_gamma_size_out_of_range_reset(void) {
+    printf("test: GAMMA_SIZE out of range resets to 0\n");
+    char *path = write_conf(
+        "DEVICE=\"/dev/dri/card0\"\n"
+        "GAMMA_SIZE=99999\n"
+    );
+    load_config(path);
+    unlink(path); free(path);
+
+    ASSERT(config.gamma_size == 0, "gamma_size == 0 (out-of-range reset)");
+}
+
+static void test_connector_default_empty(void) {
+    printf("test: CONNECTOR defaults to empty\n");
+    char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n");
+    load_config(path);
+    unlink(path); free(path);
+
+    ASSERT(config.connector[0] == '\0', "connector is empty by default");
+    ASSERT(config.gamma_size == 0, "gamma_size == 0 by default");
+}
+
+static void test_validation_clamps_temp(void) {
+    printf("test: validation clamps out-of-range temperatures\n");
+    char *path = write_conf(
+        "DEVICE=\"/dev/dri/card0\"\n"
+        "DAY_TEMP=99999\n"
+        "NIGHT_TEMP=1\n"
+    );
+    load_config(path);
+    unlink(path); free(path);
+
+    ASSERT(config.day_temp == 10000, "day_temp clamped to 10000");
+    ASSERT(config.night_temp == 1000, "night_temp clamped to 1000");
+}
+
 /* ---------- main ---------- */
 
 int main(void) {
@@ -206,6 +237,10 @@ int main(void) {
     test_single_values_parsed();
     test_comments_and_empty_lines();
     test_device_out_of_range_ignored();
+    test_connector_and_gamma_size();
+    test_gamma_size_out_of_range_reset();
+    test_connector_default_empty();
+    test_validation_clamps_temp();
 
     printf("\n=== Results: %d passed, %d failed ===\n", pass_count, fail_count);
     return fail_count > 0 ? 1 : 0;

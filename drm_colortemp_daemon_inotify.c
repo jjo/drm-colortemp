@@ -26,28 +26,8 @@
 #include <drm/drm_mode.h>
 #include "drm_device.h"
 #include "drm_colortemp_utils.h"
-
-#define CONFIG_FILE "/etc/default/drm-colortemp.conf"
-#define MAX_LINE 256
-#define MAX_DEVICES 8
-
-// Configuration
-typedef struct {
-    char devices[MAX_DEVICES][256];
-    int num_devices;
-    int day_temp;
-    int night_temp;
-    int sunset_hour;
-    int sunrise_hour;
-    int monitor_tty;
-    int warm_tty;
-    int cool_tty;
-    int check_interval;
-    int verbose;
-    double latitude;
-    double longitude;
-    int has_location;
-} config_t;
+#include "drm_config.h"
+#include "drm_log.h"
 
 // Global state
 static volatile int running = 1;
@@ -61,163 +41,41 @@ void signal_handler(int signum) {
         return;
     }
     running = 0;
-    printf("\nShutting down daemon...\n");
 }
 
-// Logging
+// log_msg - wrapper that maps level strings to syslog priorities.
+// Kept as a thin shim so call sites that pass level strings still compile.
 void log_msg(const char *level, const char *format, ...) {
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    char timestr[64];
-    strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", tm);
-    
-    printf("[%s] %s: ", timestr, level);
-    
+    int prio = LOG_INFO;
+    if (strcmp(level, "ERROR") == 0) prio = LOG_ERR;
+    else if (strcmp(level, "WARN") == 0) prio = LOG_WARNING;
+    else if (strcmp(level, "DEBUG") == 0) prio = LOG_DEBUG;
+
     va_list args;
     va_start(args, format);
-    vprintf(format, args);
+    vsyslog(prio, format, args);
     va_end(args);
-    
-    printf("\n");
-    fflush(stdout);
-}
 
-// Trim whitespace
-char *trim(char *str) {
-    char *end;
-    while (*str == ' ' || *str == '\t') str++;
-    if (*str == 0) return str;
-    end = str + strlen(str) - 1;
-    while (end > str && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
-    end[1] = '\0';
-    return str;
-}
-
-// Remove quotes from string
-char *remove_quotes(char *str) {
-    size_t len = strlen(str);
-    if (len >= 2 && ((str[0] == '"' && str[len-1] == '"') || 
-                     (str[0] == '\'' && str[len-1] == '\''))) {
-        str[len-1] = '\0';
-        return str + 1;
+    if (drm_log_stderr) {
+        va_start(args, format);
+        fprintf(stderr, "[%s] ", level);
+        vfprintf(stderr, format, args);
+        fprintf(stderr, "\n");
+        va_end(args);
     }
-    return str;
 }
 
-// Load configuration from file
+// Backwards-compat shims -- old code used trim/remove_quotes/load_config
+// directly; redirect to the new drm_config.h functions.
+char *trim(char *str)          { return config_trim(str); }
+char *remove_quotes(char *str) { return config_remove_quotes(str); }
+
 int load_config(const char *filename) {
-    FILE *f = fopen(filename, "r");
-    if (!f) {
-        log_msg("ERROR", "Cannot open config file: %s", filename);
-        return -1;
-    }
-    
-    // Set defaults
-    memset(config.devices, 0, sizeof(config.devices));
-    config.num_devices = 0;
-    config.day_temp = 6500;
-    config.night_temp = 3500;
-    config.sunset_hour = 20;
-    config.sunrise_hour = 8;
-    config.monitor_tty = 3;
-    config.warm_tty = 4;
-    config.cool_tty = 5;
-    config.check_interval = 1;
-    config.verbose = 0;
-    config.has_location = 0;
-    
-    char line[MAX_LINE];
-    int line_num = 0;
-    
-    while (fgets(line, sizeof(line), f)) {
-        line_num++;
-        char *trimmed = trim(line);
-        
-        // Skip comments and empty lines
-        if (trimmed[0] == '#' || trimmed[0] == '\0') {
-            continue;
-        }
-        
-        // Parse KEY=VALUE
-        char *equals = strchr(trimmed, '=');
-        if (!equals) {
-            continue;
-        }
-        
-        *equals = '\0';
-        char *key = trim(trimmed);
-        char *value = trim(equals + 1);
-        value = remove_quotes(value);
-        
-        if (strcmp(key, "DEVICE") == 0) {
-            strncpy(config.devices[0], value, sizeof(config.devices[0]) - 1);
-            if (config.num_devices < 1) config.num_devices = 1;
-        } else if (strncmp(key, "DEVICE", 6) == 0 && key[6] >= '1' && key[6] <= '0' + MAX_DEVICES && key[7] == '\0') {
-            int idx = key[6] - '1';
-            strncpy(config.devices[idx], value, sizeof(config.devices[idx]) - 1);
-            if (config.num_devices < idx + 1) config.num_devices = idx + 1;
-        } else if (strcmp(key, "DAY_TEMP") == 0) {
-            config.day_temp = atoi(value);
-        } else if (strcmp(key, "NIGHT_TEMP") == 0) {
-            config.night_temp = atoi(value);
-        } else if (strcmp(key, "SUNSET_HOUR") == 0) {
-            config.sunset_hour = atoi(value);
-        } else if (strcmp(key, "SUNRISE_HOUR") == 0) {
-            config.sunrise_hour = atoi(value);
-        } else if (strcmp(key, "MONITOR_TTY") == 0) {
-            config.monitor_tty = atoi(value);
-        } else if (strcmp(key, "WARM_TTY") == 0) {
-            config.warm_tty = atoi(value);
-        } else if (strcmp(key, "COOL_TTY") == 0) {
-            config.cool_tty = atoi(value);
-        } else if (strcmp(key, "CHECK_INTERVAL") == 0) {
-            config.check_interval = atoi(value);
-        } else if (strcmp(key, "VERBOSE") == 0) {
-            config.verbose = atoi(value);
-        } else if (strcmp(key, "LOCATION") == 0) {
-            if (strlen(value) > 0) {
-                if (sscanf(value, "%lf,%lf", &config.latitude, &config.longitude) == 2) {
-                    config.has_location = 1;
-                }
-            }
-        }
-    }
-    
-    fclose(f);
-
-    // Auto-detect devices if none explicitly configured
-    if (config.num_devices == 0) {
-        int found = drm_find_all_devices(config.devices, MAX_DEVICES);
-        if (found > 0) {
-            config.num_devices = found;
-            log_msg("INFO", "Auto-detected %d DRM device(s)", found);
-        } else {
-            // Last-resort fallback: use first accessible device
-            if (drm_find_device(config.devices[0], sizeof(config.devices[0])) == 0) {
-                config.num_devices = 1;
-            }
-        }
-    }
-
-    log_msg("INFO", "Configuration loaded from %s", filename);
-    if (config.verbose) {
-        for (int i = 0; i < config.num_devices; i++) {
-            log_msg("INFO", "Device[%d]: %s", i, config.devices[i]);
-        }
-        log_msg("INFO", "Day temp: %dK, Night temp: %dK", config.day_temp, config.night_temp);
-        log_msg("INFO", "Sunset: %02d:00, Sunrise: %02d:00", config.sunset_hour, config.sunrise_hour);
-        log_msg("INFO", "Monitor TTY: %d, Warm TTY: %d, Cool TTY: %d",
-                config.monitor_tty, config.warm_tty, config.cool_tty);
-        if (config.has_location) {
-            log_msg("INFO", "Location: %.4f, %.4f", config.latitude, config.longitude);
-        }
-    }
-    
-    return 0;
+    return config_load(filename, &config);
 }
 
 // Get active VT number
-int get_active_vt() {
+int get_active_vt(void) {
     int fd = open("/dev/console", O_RDONLY);
     if (fd < 0) {
         fd = open("/dev/tty0", O_RDONLY);
@@ -237,11 +95,12 @@ int get_active_vt() {
     return vts.v_active;
 }
 
-// Calculate temperature based on time
-int calculate_temperature() {
+// Calculate temperature based on time (Phase 3: uses localtime_r)
+int calculate_temperature(void) {
     time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    int hour = tm->tm_hour;
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    int hour = tm_buf.tm_hour;
     
     if (hour >= config.sunset_hour || hour < config.sunrise_hour) {
         return config.night_temp;
@@ -250,14 +109,16 @@ int calculate_temperature() {
 }
 
 // Set gamma using ioctl
+// Phase 5: If config.gamma_size > 0 it overrides the hardware-reported size.
 int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp) {
+    int effective_size = (config.gamma_size > 0) ? config.gamma_size : gamma_size;
     uint16_t *red_lut, *green_lut, *blue_lut;
 
-    if (gamma_size <= 0) return -1;
+    if (effective_size <= 0) return -1;
 
-    red_lut = calloc(gamma_size, sizeof(uint16_t));
-    green_lut = calloc(gamma_size, sizeof(uint16_t));
-    blue_lut = calloc(gamma_size, sizeof(uint16_t));
+    red_lut = calloc(effective_size, sizeof(uint16_t));
+    green_lut = calloc(effective_size, sizeof(uint16_t));
+    blue_lut = calloc(effective_size, sizeof(uint16_t));
 
     if (!red_lut || !green_lut || !blue_lut) {
         free(red_lut);
@@ -266,11 +127,11 @@ int set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp) {
         return -1;
     }
 
-    fill_gamma_luts(gamma_size, temp, 1.0, red_lut, green_lut, blue_lut);
+    fill_gamma_luts(effective_size, temp, 1.0, red_lut, green_lut, blue_lut);
 
     struct drm_mode_crtc_lut lut = {
         .crtc_id = crtc_id,
-        .gamma_size = gamma_size,
+        .gamma_size = effective_size,
         .red = (uint64_t)(uintptr_t)red_lut,
         .green = (uint64_t)(uintptr_t)green_lut,
         .blue = (uint64_t)(uintptr_t)blue_lut,
@@ -301,6 +162,97 @@ int get_crtc_info(int fd, uint32_t crtc_id, int *gamma_size, int *mode_valid) {
     return 0;
 }
 
+// Phase 4: Check whether a connector name matches the configured filter.
+// If no filter is configured (connector[0]=='\0'), every connector matches.
+static int connector_matches(int fd, uint32_t connector_id) {
+    if (config.connector[0] == '\0')
+        return 1;  /* no filter -> match all */
+
+    struct drm_mode_get_connector conn = { .connector_id = connector_id };
+    if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &conn) < 0)
+        return 0;
+
+    /* Build the canonical name "type-typeId", e.g. "DP-1" */
+    static const char *type_names[] = {
+        [0] = "Unknown",
+        [1] = "VGA",  [2] = "DVII", [3] = "DVID", [4] = "DVIA",
+        [5] = "Composite", [6] = "SVIDEO", [7] = "LVDS", [8] = "Component",
+        [9] = "9PinDIN", [10] = "DisplayPort", [11] = "HDMIA", [12] = "HDMIB",
+        [13] = "TV", [14] = "eDP", [15] = "VIRTUAL", [16] = "DSI", [17] = "DPI",
+    };
+    const char *tname = "Unknown";
+    if (conn.connector_type < sizeof(type_names)/sizeof(type_names[0]) && type_names[conn.connector_type])
+        tname = type_names[conn.connector_type];
+
+    /* Also accept short aliases: DP for DisplayPort, etc. */
+    char name_long[64], name_short[64];
+    snprintf(name_long, sizeof(name_long), "%s-%u", tname, conn.connector_type_id);
+    /* Common short aliases */
+    const char *alias = tname;
+    if (conn.connector_type == 10) alias = "DP";
+    else if (conn.connector_type == 11) alias = "HDMI-A";
+    else if (conn.connector_type == 12) alias = "HDMI-B";
+    else if (conn.connector_type == 14) alias = "eDP";
+    snprintf(name_short, sizeof(name_short), "%s-%u", alias, conn.connector_type_id);
+
+    return (strcasecmp(config.connector, name_long) == 0 ||
+            strcasecmp(config.connector, name_short) == 0);
+}
+
+// Collect CRTCs that are attached to connectors matching the filter.
+// Returns a bitmask of matching CRTC indices.
+static uint32_t get_matching_crtc_mask(int fd) {
+    if (config.connector[0] == '\0')
+        return ~0u;  /* no filter -> all CRTCs */
+
+    struct drm_mode_card_res res = {0};
+    if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0 || res.count_connectors == 0)
+        return ~0u;
+
+    uint32_t *conn_ids = calloc(res.count_connectors, sizeof(uint32_t));
+    if (!conn_ids) return ~0u;
+    res.connector_id_ptr = (uint64_t)(uintptr_t)conn_ids;
+
+    /* Also need encoder list to map connector -> CRTC */
+    uint32_t *enc_ids = calloc(res.count_encoders ? res.count_encoders : 1, sizeof(uint32_t));
+    uint32_t *crtc_ids = calloc(res.count_crtcs ? res.count_crtcs : 1, sizeof(uint32_t));
+    uint32_t *fb_ids = calloc(res.count_fbs ? res.count_fbs : 1, sizeof(uint32_t));
+    res.encoder_id_ptr = (uint64_t)(uintptr_t)enc_ids;
+    res.crtc_id_ptr    = (uint64_t)(uintptr_t)crtc_ids;
+    res.fb_id_ptr      = (uint64_t)(uintptr_t)fb_ids;
+
+    if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) {
+        free(conn_ids); free(enc_ids); free(crtc_ids); free(fb_ids);
+        return ~0u;
+    }
+
+    uint32_t mask = 0;
+    for (uint32_t c = 0; c < res.count_connectors; c++) {
+        if (!connector_matches(fd, conn_ids[c]))
+            continue;
+
+        /* Get the encoder attached to this connector */
+        struct drm_mode_get_connector gc = { .connector_id = conn_ids[c] };
+        if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &gc) < 0 || gc.encoder_id == 0)
+            continue;
+
+        struct drm_mode_get_encoder enc = { .encoder_id = gc.encoder_id };
+        if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &enc) < 0)
+            continue;
+
+        /* Find which CRTC index this encoder is bound to */
+        for (uint32_t i = 0; i < res.count_crtcs; i++) {
+            if (crtc_ids[i] == enc.crtc_id) {
+                mask |= (1u << i);
+                break;
+            }
+        }
+    }
+
+    free(conn_ids); free(enc_ids); free(crtc_ids); free(fb_ids);
+    return mask ? mask : ~0u;  /* fall back to all if nothing matched */
+}
+
 // Apply temperature to all CRTCs on a single DRM device fd
 static int apply_temperature_to_fd(int fd, const char *device_name, int temp) {
     struct drm_mode_card_res res = {0};
@@ -315,9 +267,9 @@ static int apply_temperature_to_fd(int fd, const char *device_name, int temp) {
     }
 
     uint32_t *crtcs = calloc(res.count_crtcs, sizeof(uint32_t));
-    uint32_t *fbs = calloc(res.count_fbs, sizeof(uint32_t));
-    uint32_t *connectors = calloc(res.count_connectors, sizeof(uint32_t));
-    uint32_t *encoders = calloc(res.count_encoders, sizeof(uint32_t));
+    uint32_t *fbs = calloc(res.count_fbs ? res.count_fbs : 1, sizeof(uint32_t));
+    uint32_t *connectors = calloc(res.count_connectors ? res.count_connectors : 1, sizeof(uint32_t));
+    uint32_t *encoders = calloc(res.count_encoders ? res.count_encoders : 1, sizeof(uint32_t));
 
     if (!crtcs) {
         free(fbs); free(connectors); free(encoders);
@@ -335,9 +287,15 @@ static int apply_temperature_to_fd(int fd, const char *device_name, int temp) {
         return -1;
     }
 
+    /* Phase 4: build a mask of CRTCs attached to the requested connector */
+    uint32_t crtc_mask = get_matching_crtc_mask(fd);
+
     int success_count = 0;
 
     for (uint32_t i = 0; i < res.count_crtcs; i++) {
+        if (!(crtc_mask & (1u << i)))
+            continue;
+
         uint32_t crtc_id = crtcs[i];
         int gamma_size, mode_valid;
 
@@ -391,6 +349,10 @@ void daemon_loop(const char *config_file) {
     log_msg("INFO", "Day: %dK, Night: %dK", config.day_temp, config.night_temp);
     log_msg("INFO", "Sunset: %02d:00, Sunrise: %02d:00", 
             config.sunset_hour, config.sunrise_hour);
+    if (config.connector[0])
+        log_msg("INFO", "Connector filter: %s", config.connector);
+    if (config.gamma_size > 0)
+        log_msg("INFO", "Gamma table size override: %d", config.gamma_size);
     
     // Setup inotify - watch the directory, not the file itself
     // This handles editors that create temp files and rename
@@ -532,6 +494,9 @@ void print_usage(const char *prog) {
 int main(int argc, char *argv[]) {
     const char *config_file = CONFIG_FILE;
     int opt;
+
+    /* Phase 3: ensure timezone database is loaded */
+    tzset();
     
     while ((opt = getopt(argc, argv, "c:h")) != -1) {
         switch (opt) {
@@ -558,6 +523,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Failed to load config file\n");
         return 1;
     }
+
+    // Initialize syslog (must be after load_config so config.verbose is known)
+    drm_log_init("drm_colortemp_daemon", config.verbose);
     
     // Setup signal handlers
     signal(SIGINT, signal_handler);
@@ -567,6 +535,7 @@ int main(int argc, char *argv[]) {
     // Run daemon
     daemon_loop(config_file);
 
+    drm_log_close();
     return 0;
 }
 #endif /* TEST_BUILD */
