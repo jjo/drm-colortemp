@@ -14,241 +14,234 @@
 #define GAMMA_SIZE 256
 
 int
-set_gamma_temp (int fd, uint32_t crtc_id, int gamma_size, int temp,
-		double brightness)
+set_gamma_temp(int fd, uint32_t crtc_id, int gamma_size, int temp,
+	       double brightness)
 {
-  uint16_t *red_lut, *green_lut, *blue_lut;
+	uint16_t *red_lut, *green_lut, *blue_lut;
 
-  if (gamma_size <= 0)
-    {
-      DRM_LOG_ERR ("Invalid gamma size: %d", gamma_size);
-      return -1;
-    }
-  // Allocate gamma ramps
-  red_lut = malloc (gamma_size * sizeof (uint16_t));
-  green_lut = malloc (gamma_size * sizeof (uint16_t));
-  blue_lut = malloc (gamma_size * sizeof (uint16_t));
+	if (gamma_size <= 0) {
+		DRM_LOG_ERR("Invalid gamma size: %d", gamma_size);
+		return -1;
+	}
+	// Allocate gamma ramps
+	red_lut = malloc(gamma_size * sizeof(uint16_t));
+	green_lut = malloc(gamma_size * sizeof(uint16_t));
+	blue_lut = malloc(gamma_size * sizeof(uint16_t));
 
-  if (!red_lut || !green_lut || !blue_lut)
-    {
-      DRM_LOG_ERR ("Failed to allocate gamma tables");
-      free (red_lut);
-      free (green_lut);
-      free (blue_lut);
-      return -1;
-    }
+	if (!red_lut || !green_lut || !blue_lut) {
+		DRM_LOG_ERR("Failed to allocate gamma tables");
+		free(red_lut);
+		free(green_lut);
+		free(blue_lut);
+		return -1;
+	}
 
-  fill_gamma_luts (gamma_size, temp, brightness, red_lut, green_lut,
-		   blue_lut);
+	fill_gamma_luts(gamma_size, temp, brightness, red_lut, green_lut,
+			blue_lut);
 
-  // Set gamma
-  int ret = drmModeCrtcSetGamma (fd, crtc_id, gamma_size, red_lut,
-				 green_lut, blue_lut);
+	// Set gamma
+	int ret = drmModeCrtcSetGamma(fd, crtc_id, gamma_size, red_lut,
+				      green_lut, blue_lut);
 
-  free (red_lut);
-  free (green_lut);
-  free (blue_lut);
+	free(red_lut);
+	free(green_lut);
+	free(blue_lut);
 
-  return ret;
+	return ret;
 }
 
-void
-print_usage (const char *prog)
+void print_usage(const char *prog)
 {
-  printf ("Usage: %s [OPTIONS]\n", prog);
-  printf ("Options:\n");
-  printf
-    ("  -t TEMP      Color temperature in Kelvin (1000-10000, default: 6500)\n");
-  printf ("  -b BRIGHT    Brightness (0.1-1.0, default: 1.0)\n");
-  printf ("  -d DEVICE    DRM device (default: /dev/dri/card1)\n");
-  printf ("  -r           Reset to default (6500K, brightness 1.0)\n");
-  printf ("  -l           List available displays\n");
-  printf ("  -h           Show this help\n");
-  printf ("\nExamples:\n");
-  printf ("  %s -t 3500           # Warm (evening)\n", prog);
-  printf ("  %s -t 6500           # Neutral (daylight)\n", prog);
-  printf ("  %s -t 3500 -b 0.8    # Warm and slightly dimmed\n", prog);
-  printf ("  %s -r                # Reset to defaults\n", prog);
+	printf("Usage: %s [OPTIONS]\n", prog);
+	printf("Options:\n");
+	printf
+	    ("  -t TEMP      Color temperature in Kelvin (1000-10000, default: 6500)\n");
+	printf("  -b BRIGHT    Brightness (0.1-1.0, default: 1.0)\n");
+	printf("  -d DEVICE    DRM device (default: /dev/dri/card1)\n");
+	printf
+	    ("  -r           Reset to default (6500K, brightness 1.0)\n");
+	printf("  -l           List available displays\n");
+	printf("  -h           Show this help\n");
+	printf("\nExamples:\n");
+	printf("  %s -t 3500           # Warm (evening)\n", prog);
+	printf("  %s -t 6500           # Neutral (daylight)\n", prog);
+	printf("  %s -t 3500 -b 0.8    # Warm and slightly dimmed\n",
+	       prog);
+	printf("  %s -r                # Reset to defaults\n", prog);
 }
 
-int
-main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-  const char *device = "/dev/dri/card1";
-  int temp = 6500;
-  double brightness = 1.0;
-  int list_only = 0;
-  int opt;
-  int has_action = 0;		// Track if user specified any action
-  int parsed_val;
+	const char *device = "/dev/dri/card1";
+	int temp = 6500;
+	double brightness = 1.0;
+	int list_only = 0;
+	int opt;
+	int has_action = 0;	// Track if user specified any action
+	int parsed_val;
 
-  // Parse command line arguments
-  while ((opt = getopt (argc, argv, "t:b:d:rlh")) != -1)
-    {
-      switch (opt)
-	{
-	case 't':
-	  if (!safe_atoi (optarg, &parsed_val, 1000, 10000))
-	    {
-	      fprintf (stderr,
-		       "Temperature must be between 1000 and 10000K\n");
-	      return 1;
-	    }
-	  temp = parsed_val;
-	  has_action = 1;
-	  break;
-	case 'b':
-	  brightness = atof (optarg);
-	  if (brightness < 0.1 || brightness > 1.0)
-	    {
-	      fprintf (stderr, "Brightness must be between 0.1 and 1.0\n");
-	      return 1;
-	    }
-	  has_action = 1;
-	  break;
-	case 'd':
-	  device = optarg;
-	  break;
-	case 'r':
-	  temp = 6500;
-	  brightness = 1.0;
-	  has_action = 1;
-	  break;
-	case 'l':
-	  list_only = 1;
-	  has_action = 1;
-	  break;
-	case 'h':
-	  print_usage (argv[0]);
-	  return 0;
-	default:
-	  print_usage (argv[0]);
-	  return 1;
-	}
-    }
-
-  // If no action specified, default to listing
-  if (!has_action)
-    {
-      list_only = 1;
-    }
-  // Initialize logging (tool mode: verbose to stderr, no syslog noise)
-  drm_log_init ("drm_colortemp", 1);
-
-  // Open DRM device (with auto-detection fallback)
-  char actual_device[256];
-  int fd = drm_open_device (device, actual_device, sizeof (actual_device));
-  if (fd < 0)
-    {
-      DRM_LOG_ERR ("Failed to open DRM device: %s", device);
-      fprintf (stderr, "\nAvailable DRM devices:\n");
-      system ("ls -la /dev/dri/ 2>/dev/null");
-      fprintf (stderr,
-	       "\nTry running with sudo or adding your user to the 'video' group\n");
-      fprintf (stderr, "Or specify a device with: -d /dev/dri/cardX\n");
-      drm_log_close ();
-      return 1;
-    }
-  if (strcmp (actual_device, device) != 0)
-    {
-      DRM_LOG_INF ("Using device: %s", actual_device);
-    }
-  // Try to become DRM master (will fail if compositor is running)
-  if (drmSetMaster (fd) != 0)
-    {
-      DRM_LOG_WRN
-	("Could not become DRM master (compositor is likely running)");
-      DRM_LOG_WRN ("This may cause 'Permission denied' errors.");
-      fprintf (stderr, "\nTo fix this:\n");
-      fprintf (stderr,
-	       "1. Switch to a TTY (Ctrl+Alt+F3), run the command there, then switch back\n");
-      fprintf (stderr,
-	       "2. Or temporarily stop your compositor/display manager\n");
-      fprintf (stderr, "\nContinuing anyway...\n\n");
-    }
-  // Get DRM resources
-  drmModeRes *resources = drmModeGetResources (fd);
-  if (!resources)
-    {
-      DRM_LOG_ERR ("Failed to get DRM resources");
-      close (fd);
-      drm_log_close ();
-      return 1;
-    }
-
-  if (list_only)
-    {
-      printf ("Available displays:\n");
-      for (int i = 0; i < resources->count_crtcs; i++)
-	{
-	  printf (" CRTC %d: ID=%u\n", i, resources->crtcs[i]);
-	}
-      drmModeFreeResources (resources);
-      close (fd);
-      drm_log_close ();
-      return 0;
-    }
-
-  DRM_LOG_INF
-    ("Setting color temperature to %dK with brightness %.2f", temp,
-     brightness);
-
-  // Apply to all CRTCs (displays)
-  int success_count = 0;
-  for (int i = 0; i < resources->count_crtcs; i++)
-    {
-      uint32_t crtc_id = resources->crtcs[i];
-      drmModeCrtc *crtc = drmModeGetCrtc (fd, crtc_id);
-
-      if (!crtc)
-	{
-	  DRM_LOG_ERR ("Failed to get CRTC %u", crtc_id);
-	  continue;
-	}
-      // Skip inactive CRTCs (no mode set = no display connected)
-      if (!crtc->mode_valid)
-	{
-	  DRM_LOG_DBG ("Skipping inactive CRTC %u", crtc_id);
-	  drmModeFreeCrtc (crtc);
-	  continue;
-	}
-      // Get gamma size for this CRTC
-      int gamma_size = crtc->gamma_size;
-      if (gamma_size == 0)
-	{
-	  DRM_LOG_WRN ("CRTC %u doesn't support gamma adjustment", crtc_id);
-	  drmModeFreeCrtc (crtc);
-	  continue;
+	// Parse command line arguments
+	while ((opt = getopt(argc, argv, "t:b:d:rlh")) != -1) {
+		switch (opt) {
+		case 't':
+			if (!safe_atoi(optarg, &parsed_val, 1000, 10000)) {
+				fprintf(stderr,
+					"Temperature must be between 1000 and 10000K\n");
+				return 1;
+			}
+			temp = parsed_val;
+			has_action = 1;
+			break;
+		case 'b':
+			{
+				char *endptr;
+				errno = 0;
+				double val = strtod(optarg, &endptr);
+				if (errno != 0 || endptr == optarg
+				    || *endptr != '\0' || val < 0.1
+				    || val > 1.0) {
+					fprintf(stderr,
+						"Brightness must be between 0.1 and 1.0\n");
+					return 1;
+				}
+				brightness = val;
+				has_action = 1;
+				break;
+			}
+		case 'd':
+			device = optarg;
+			break;
+		case 'r':
+			temp = 6500;
+			brightness = 1.0;
+			has_action = 1;
+			break;
+		case 'l':
+			list_only = 1;
+			has_action = 1;
+			break;
+		case 'h':
+			print_usage(argv[0]);
+			return 0;
+		default:
+			print_usage(argv[0]);
+			return 1;
+		}
 	}
 
-      DRM_LOG_DBG ("Applying to CRTC %u (gamma size: %d)...",
-		   crtc_id, gamma_size);
-
-      if (set_gamma_temp (fd, crtc_id, gamma_size, temp, brightness) == 0)
-	{
-	  DRM_LOG_INF ("Applied to CRTC %u", crtc_id);
-	  success_count++;
+	// If no action specified, default to listing
+	if (!has_action) {
+		list_only = 1;
 	}
-      else
-	{
-	  DRM_LOG_ERR ("Failed to apply to CRTC %u: %s",
-		       crtc_id, strerror (errno));
+	// Initialize logging (tool mode: verbose to stderr, no syslog noise)
+	drm_log_init("drm_colortemp", 1);
+
+	// Open DRM device (with auto-detection fallback)
+	char actual_device[256];
+	int fd =
+	    drm_open_device(device, actual_device, sizeof(actual_device));
+	if (fd < 0) {
+		DRM_LOG_ERR("Failed to open DRM device: %s", device);
+		fprintf(stderr, "\nAvailable DRM devices:\n");
+		system("ls -la /dev/dri/ 2>/dev/null");
+		fprintf(stderr,
+			"\nTry running with sudo or adding your user to the 'video' group\n");
+		fprintf(stderr,
+			"Or specify a device with: -d /dev/dri/cardX\n");
+		drm_log_close();
+		return 1;
+	}
+	if (strcmp(actual_device, device) != 0) {
+		DRM_LOG_INF("Using device: %s", actual_device);
+	}
+	// Try to become DRM master (will fail if compositor is running)
+	if (drmSetMaster(fd) != 0) {
+		DRM_LOG_WRN
+		    ("Could not become DRM master (compositor is likely running)");
+		DRM_LOG_WRN("This may cause 'Permission denied' errors.");
+		fprintf(stderr, "\nTo fix this:\n");
+		fprintf(stderr,
+			"1. Switch to a TTY (Ctrl+Alt+F3), run the command there, then switch back\n");
+		fprintf(stderr,
+			"2. Or temporarily stop your compositor/display manager\n");
+		fprintf(stderr, "\nContinuing anyway...\n\n");
+	}
+	// Get DRM resources
+	drmModeRes *resources = drmModeGetResources(fd);
+	if (!resources) {
+		DRM_LOG_ERR("Failed to get DRM resources");
+		close(fd);
+		drm_log_close();
+		return 1;
 	}
 
-      drmModeFreeCrtc (crtc);
-    }
+	if (list_only) {
+		printf("Available displays:\n");
+		for (int i = 0; i < resources->count_crtcs; i++) {
+			printf(" CRTC %d: ID=%u\n", i,
+			       resources->crtcs[i]);
+		}
+		drmModeFreeResources(resources);
+		close(fd);
+		drm_log_close();
+		return 0;
+	}
 
-  drmModeFreeResources (resources);
-  close (fd);
+	DRM_LOG_INF
+	    ("Setting color temperature to %dK with brightness %.2f", temp,
+	     brightness);
 
-  if (success_count == 0)
-    {
-      DRM_LOG_ERR ("Failed to apply gamma to any display");
-      drm_log_close ();
-      return 1;
-    }
+	// Apply to all CRTCs (displays)
+	int success_count = 0;
+	for (int i = 0; i < resources->count_crtcs; i++) {
+		uint32_t crtc_id = resources->crtcs[i];
+		drmModeCrtc *crtc = drmModeGetCrtc(fd, crtc_id);
 
-  DRM_LOG_INF ("Successfully adjusted %d display(s)", success_count);
-  drm_log_close ();
-  return 0;
+		if (!crtc) {
+			DRM_LOG_ERR("Failed to get CRTC %u", crtc_id);
+			continue;
+		}
+		// Skip inactive CRTCs (no mode set = no display connected)
+		if (!crtc->mode_valid) {
+			DRM_LOG_DBG("Skipping inactive CRTC %u", crtc_id);
+			drmModeFreeCrtc(crtc);
+			continue;
+		}
+		// Get gamma size for this CRTC
+		int gamma_size = crtc->gamma_size;
+		if (gamma_size == 0) {
+			DRM_LOG_WRN
+			    ("CRTC %u doesn't support gamma adjustment",
+			     crtc_id);
+			drmModeFreeCrtc(crtc);
+			continue;
+		}
+
+		DRM_LOG_DBG("Applying to CRTC %u (gamma size: %d)...",
+			    crtc_id, gamma_size);
+
+		if (set_gamma_temp
+		    (fd, crtc_id, gamma_size, temp, brightness) == 0) {
+			DRM_LOG_INF("Applied to CRTC %u", crtc_id);
+			success_count++;
+		} else {
+			DRM_LOG_ERR("Failed to apply to CRTC %u: %s",
+				    crtc_id, strerror(errno));
+		}
+
+		drmModeFreeCrtc(crtc);
+	}
+
+	drmModeFreeResources(resources);
+	close(fd);
+
+	if (success_count == 0) {
+		DRM_LOG_ERR("Failed to apply gamma to any display");
+		drm_log_close();
+		return 1;
+	}
+
+	DRM_LOG_INF("Successfully adjusted %d display(s)", success_count);
+	drm_log_close();
+	return 0;
 }
