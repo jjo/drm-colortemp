@@ -20,7 +20,8 @@
  * @param device_out_size Size of device_out buffer
  * @return File descriptor on success, -1 on error
  */
-int drm_open_device(const char *preferred_device, char *device_out, size_t device_out_size);
+int drm_open_device (const char *preferred_device, char *device_out,
+		     size_t device_out_size);
 
 /**
  * Check if a DRM device exists and is accessible
@@ -28,7 +29,7 @@ int drm_open_device(const char *preferred_device, char *device_out, size_t devic
  * @param device Device path to check
  * @return 1 if accessible, 0 otherwise
  */
-int drm_device_accessible(const char *device);
+int drm_device_accessible (const char *device);
 
 /**
  * Check if a DRM device has CRTCs (display outputs)
@@ -39,7 +40,7 @@ int drm_device_accessible(const char *device);
  * @param device Device path to check
  * @return 1 if device has CRTCs, 0 otherwise
  */
-int drm_device_has_crtcs(const char *device);
+int drm_device_has_crtcs (const char *device);
 
 /**
  * Find first available DRM card device
@@ -48,7 +49,7 @@ int drm_device_has_crtcs(const char *device);
  * @param device_out_size Size of device_out buffer
  * @return 0 on success, -1 if no device found
  */
-int drm_find_device(char *device_out, size_t device_out_size);
+int drm_find_device (char *device_out, size_t device_out_size);
 
 /**
  * Find all DRM card devices that have CRTCs
@@ -60,6 +61,6 @@ int drm_find_device(char *device_out, size_t device_out_size);
  * @param max_devices Maximum number of devices to return
  * @return Number of devices found (0 if none)
  */
-int drm_find_all_devices(char (*devices)[256], int max_devices);
+int drm_find_all_devices (char (*devices)[256], int max_devices);
 
 #endif /* DRM_DEVICE_H */

@@ -9,11 +9,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include "drm_config.h"
 
 /* Defined in drm_colortemp_daemon_inotify.o */
-extern config_t config;
+typedef struct {
+	volatile int running;
+	volatile int reload_config;
+	config_t config;
+} daemon_ctx_t;
+extern daemon_ctx_t ctx;
 extern int load_config(const char *filename);
+#define config ctx.config
 
 /* ---------- helpers ---------- */
 
@@ -31,217 +38,256 @@ static int fail_count = 0;
 } while (0)
 
 /* Write a temp conf file, return path (caller must unlink) */
-static char *write_conf(const char *content) {
-    char *path = strdup("/tmp/test_drm_colortemp_XXXXXX.conf");
-    int fd = mkstemps(path, 5);
-    if (fd < 0) { perror("mkstemps"); exit(1); }
-    write(fd, content, strlen(content));
-    close(fd);
-    return path;
+static char *write_conf(const char *content)
+{
+	char *path = strdup("/tmp/test_drm_colortemp_XXXXXX.conf");
+	int fd = mkstemps(path, 5);
+	if (fd < 0) {
+		perror("mkstemps");
+		exit(1);
+	}
+	// Robust write: handle partial writes and EINTR
+	size_t len = strlen(content);
+	size_t written = 0;
+	while (written < len) {
+		ssize_t ret = write(fd, content + written, len - written);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			perror("write");
+			close(fd);
+			unlink(path);
+			free(path);
+			exit(1);
+		}
+		written += ret;
+	}
+	close(fd);
+	return path;
 }
 
 /* ---------- tests ---------- */
 
-static void test_single_device_legacy(void) {
-    printf("test: DEVICE= (legacy single-device)\n");
-    char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n");
-    load_config(path);
-    unlink(path); free(path);
+static void test_single_device_legacy(void)
+{
+	printf("test: DEVICE= (legacy single-device)\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.num_devices == 1, "num_devices == 1");
-    ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0, "devices[0] == /dev/dri/card0");
+	ASSERT(config.num_devices == 1, "num_devices == 1");
+	ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0,
+	       "devices[0] == /dev/dri/card0");
 }
 
-static void test_device1_device2(void) {
-    printf("test: DEVICE1= + DEVICE2= (multi-device)\n");
-    char *path = write_conf(
-        "DEVICE1=\"/dev/dri/card0\"\n"
-        "DEVICE2=\"/dev/dri/card1\"\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_device1_device2(void)
+{
+	printf("test: DEVICE1= + DEVICE2= (multi-device)\n");
+	char *path = write_conf("DEVICE1=\"/dev/dri/card0\"\n"
+				"DEVICE2=\"/dev/dri/card1\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.num_devices == 2, "num_devices == 2");
-    ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0, "devices[0] == /dev/dri/card0");
-    ASSERT(strcmp(config.devices[1], "/dev/dri/card1") == 0, "devices[1] == /dev/dri/card1");
+	ASSERT(config.num_devices == 2, "num_devices == 2");
+	ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0,
+	       "devices[0] == /dev/dri/card0");
+	ASSERT(strcmp(config.devices[1], "/dev/dri/card1") == 0,
+	       "devices[1] == /dev/dri/card1");
 }
 
-static void test_mixed_device_and_device2(void) {
-    printf("test: DEVICE= + DEVICE2= (mixed)\n");
-    char *path = write_conf(
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "DEVICE2=\"/dev/dri/card1\"\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_mixed_device_and_device2(void)
+{
+	printf("test: DEVICE= + DEVICE2= (mixed)\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n"
+				"DEVICE2=\"/dev/dri/card1\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.num_devices == 2, "num_devices == 2");
-    ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0, "devices[0] == /dev/dri/card0");
-    ASSERT(strcmp(config.devices[1], "/dev/dri/card1") == 0, "devices[1] == /dev/dri/card1");
+	ASSERT(config.num_devices == 2, "num_devices == 2");
+	ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0,
+	       "devices[0] == /dev/dri/card0");
+	ASSERT(strcmp(config.devices[1], "/dev/dri/card1") == 0,
+	       "devices[1] == /dev/dri/card1");
 }
 
-static void test_device_max(void) {
-    printf("test: DEVICE1..DEVICE8 (max devices)\n");
-    char *path = write_conf(
-        "DEVICE1=\"/dev/dri/card0\"\n"
-        "DEVICE2=\"/dev/dri/card1\"\n"
-        "DEVICE3=\"/dev/dri/card2\"\n"
-        "DEVICE4=\"/dev/dri/card3\"\n"
-        "DEVICE5=\"/dev/dri/card4\"\n"
-        "DEVICE6=\"/dev/dri/card5\"\n"
-        "DEVICE7=\"/dev/dri/card6\"\n"
-        "DEVICE8=\"/dev/dri/card7\"\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_device_max(void)
+{
+	printf("test: DEVICE1..DEVICE8 (max devices)\n");
+	char *path = write_conf("DEVICE1=\"/dev/dri/card0\"\n"
+				"DEVICE2=\"/dev/dri/card1\"\n"
+				"DEVICE3=\"/dev/dri/card2\"\n"
+				"DEVICE4=\"/dev/dri/card3\"\n"
+				"DEVICE5=\"/dev/dri/card4\"\n"
+				"DEVICE6=\"/dev/dri/card5\"\n"
+				"DEVICE7=\"/dev/dri/card6\"\n"
+				"DEVICE8=\"/dev/dri/card7\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.num_devices == 8, "num_devices == 8");
-    ASSERT(strcmp(config.devices[7], "/dev/dri/card7") == 0, "devices[7] == /dev/dri/card7");
+	ASSERT(config.num_devices == 8, "num_devices == 8");
+	ASSERT(strcmp(config.devices[7], "/dev/dri/card7") == 0,
+	       "devices[7] == /dev/dri/card7");
 }
 
-static void test_no_device_autodetect(void) {
-    printf("test: no DEVICE= (auto-detect)\n");
-    char *path = write_conf("DAY_TEMP=6500\n");
-    load_config(path);
-    unlink(path); free(path);
+static void test_no_device_autodetect(void)
+{
+	printf("test: no DEVICE= (auto-detect)\n");
+	char *path = write_conf("DAY_TEMP=6500\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    /* Auto-detect may find 0 or more devices depending on hardware.
-     * We just verify the function handled it without crashing and
-     * num_devices is non-negative. */
-    ASSERT(config.num_devices >= 0, "num_devices >= 0 (no crash)");
-    printf("  INFO: auto-detected %d device(s)\n", config.num_devices);
+	/* Auto-detect may find 0 or more devices depending on hardware.
+	 * We just verify the function handled it without crashing and
+	 * num_devices is non-negative. */
+	ASSERT(config.num_devices >= 0, "num_devices >= 0 (no crash)");
+	printf("  INFO: auto-detected %d device(s)\n", config.num_devices);
 }
 
-static void test_single_values_parsed(void) {
-    printf("test: scalar config values\n");
-    char *path = write_conf(
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "DAY_TEMP=5500\n"
-        "NIGHT_TEMP=2700\n"
-        "SUNSET_HOUR=19\n"
-        "SUNRISE_HOUR=7\n"
-        "MONITOR_TTY=3\n"
-        "WARM_TTY=4\n"
-        "COOL_TTY=5\n"
-        "CHECK_INTERVAL=2\n"
-        "VERBOSE=1\n"
-        "LOCATION=\"51.5074,-0.1278\"\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_single_values_parsed(void)
+{
+	printf("test: scalar config values\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n"
+				"DAY_TEMP=5500\n"
+				"NIGHT_TEMP=2700\n"
+				"SUNSET_HOUR=19\n"
+				"SUNRISE_HOUR=7\n"
+				"MONITOR_TTY=3\n"
+				"WARM_TTY=4\n"
+				"COOL_TTY=5\n"
+				"CHECK_INTERVAL=2\n"
+				"VERBOSE=1\n"
+				"LOCATION=\"51.5074,-0.1278\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.day_temp == 5500,   "day_temp == 5500");
-    ASSERT(config.night_temp == 2700, "night_temp == 2700");
-    ASSERT(config.sunset_hour == 19,  "sunset_hour == 19");
-    ASSERT(config.sunrise_hour == 7,  "sunrise_hour == 7");
-    ASSERT(config.monitor_tty == 3,   "monitor_tty == 3");
-    ASSERT(config.warm_tty == 4,      "warm_tty == 4");
-    ASSERT(config.cool_tty == 5,      "cool_tty == 5");
-    ASSERT(config.check_interval == 2,"check_interval == 2");
-    ASSERT(config.verbose == 1,       "verbose == 1");
-    ASSERT(config.has_location == 1,  "has_location == 1");
+	ASSERT(config.day_temp == 5500, "day_temp == 5500");
+	ASSERT(config.night_temp == 2700, "night_temp == 2700");
+	ASSERT(config.sunset_hour == 19, "sunset_hour == 19");
+	ASSERT(config.sunrise_hour == 7, "sunrise_hour == 7");
+	ASSERT(config.monitor_tty == 3, "monitor_tty == 3");
+	ASSERT(config.warm_tty == 4, "warm_tty == 4");
+	ASSERT(config.cool_tty == 5, "cool_tty == 5");
+	ASSERT(config.check_interval == 2, "check_interval == 2");
+	ASSERT(config.verbose == 1, "verbose == 1");
+	ASSERT(config.has_location == 1, "has_location == 1");
 }
 
-static void test_comments_and_empty_lines(void) {
-    printf("test: comments and empty lines ignored\n");
-    char *path = write_conf(
-        "# This is a comment\n"
-        "\n"
-        "   # Indented comment\n"
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "\n"
-        "DAY_TEMP=4000\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_comments_and_empty_lines(void)
+{
+	printf("test: comments and empty lines ignored\n");
+	char *path = write_conf("# This is a comment\n"
+				"\n"
+				"   # Indented comment\n"
+				"DEVICE=\"/dev/dri/card0\"\n"
+				"\n" "DAY_TEMP=4000\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.num_devices == 1, "num_devices == 1");
-    ASSERT(config.day_temp == 4000,  "day_temp == 4000");
+	ASSERT(config.num_devices == 1, "num_devices == 1");
+	ASSERT(config.day_temp == 4000, "day_temp == 4000");
 }
 
-static void test_device_out_of_range_ignored(void) {
-    printf("test: DEVICE0 and DEVICE9 are ignored (out of range)\n");
-    char *path = write_conf(
-        "DEVICE1=\"/dev/dri/card0\"\n"
-        "DEVICE9=\"/dev/dri/card9\"\n"  /* >MAX_DEVICES, should be ignored */
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_device_out_of_range_ignored(void)
+{
+	printf("test: DEVICE0 and DEVICE9 are ignored (out of range)\n");
+	char *path = write_conf("DEVICE1=\"/dev/dri/card0\"\n" "DEVICE9=\"/dev/dri/card9\"\n"	/* >MAX_DEVICES, should be ignored */
+	    );
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    /* DEVICE9 is > MAX_DEVICES=8, so only DEVICE1 should be stored */
-    ASSERT(config.num_devices == 1, "num_devices == 1 (DEVICE9 ignored)");
-    ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0, "devices[0] == /dev/dri/card0");
+	/* DEVICE9 is > MAX_DEVICES=8, so only DEVICE1 should be stored */
+	ASSERT(config.num_devices == 1,
+	       "num_devices == 1 (DEVICE9 ignored)");
+	ASSERT(strcmp(config.devices[0], "/dev/dri/card0") == 0,
+	       "devices[0] == /dev/dri/card0");
 }
 
 /* Phase 4 & 5: new config keys */
-static void test_connector_and_gamma_size(void) {
-    printf("test: CONNECTOR and GAMMA_SIZE config keys\n");
-    char *path = write_conf(
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "CONNECTOR=\"DP-1\"\n"
-        "GAMMA_SIZE=1024\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_connector_and_gamma_size(void)
+{
+	printf("test: CONNECTOR and GAMMA_SIZE config keys\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n"
+				"CONNECTOR=\"DP-1\"\n"
+				"GAMMA_SIZE=1024\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(strcmp(config.connector, "DP-1") == 0, "connector == DP-1");
-    ASSERT(config.gamma_size == 1024, "gamma_size == 1024");
+	ASSERT(strcmp(config.connector, "DP-1") == 0, "connector == DP-1");
+	ASSERT(config.gamma_size == 1024, "gamma_size == 1024");
 }
 
-static void test_gamma_size_out_of_range_reset(void) {
-    printf("test: GAMMA_SIZE out of range resets to 0\n");
-    char *path = write_conf(
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "GAMMA_SIZE=99999\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_gamma_size_out_of_range_reset(void)
+{
+	printf("test: GAMMA_SIZE out of range resets to 0\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n"
+				"GAMMA_SIZE=99999\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.gamma_size == 0, "gamma_size == 0 (out-of-range reset)");
+	ASSERT(config.gamma_size == 0,
+	       "gamma_size == 0 (out-of-range reset)");
 }
 
-static void test_connector_default_empty(void) {
-    printf("test: CONNECTOR defaults to empty\n");
-    char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n");
-    load_config(path);
-    unlink(path); free(path);
+static void test_connector_default_empty(void)
+{
+	printf("test: CONNECTOR defaults to empty\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.connector[0] == '\0', "connector is empty by default");
-    ASSERT(config.gamma_size == 0, "gamma_size == 0 by default");
+	ASSERT(config.connector[0] == '\0',
+	       "connector is empty by default");
+	ASSERT(config.gamma_size == 0, "gamma_size == 0 by default");
 }
 
-static void test_validation_clamps_temp(void) {
-    printf("test: validation clamps out-of-range temperatures\n");
-    char *path = write_conf(
-        "DEVICE=\"/dev/dri/card0\"\n"
-        "DAY_TEMP=99999\n"
-        "NIGHT_TEMP=1\n"
-    );
-    load_config(path);
-    unlink(path); free(path);
+static void test_validation_clamps_temp(void)
+{
+	printf("test: validation rejects out-of-range temperatures\\n");
+	char *path = write_conf("DEVICE=\"/dev/dri/card0\"\n"
+				"DAY_TEMP=99999\n" "NIGHT_TEMP=1\n");
+	load_config(path);
+	unlink(path);
+	free(path);
 
-    ASSERT(config.day_temp == 10000, "day_temp clamped to 10000");
-    ASSERT(config.night_temp == 1000, "night_temp clamped to 1000");
+	// With safe_atoi, out-of-range values are rejected and defaults are used
+	// DAY_TEMP defaults to 6500, NIGHT_TEMP defaults to 3500
+	ASSERT(config.day_temp == 6500,
+	       "day_temp uses default (99999 rejected)");
+	ASSERT(config.night_temp == 3500,
+	       "night_temp uses default (1 rejected)");
 }
 
 /* ---------- main ---------- */
 
-int main(void) {
-    printf("=== drm-colortemp config unit tests ===\n\n");
+int main(void)
+{
+	printf("=== drm-colortemp config unit tests ===\n\n");
 
-    test_single_device_legacy();
-    test_device1_device2();
-    test_mixed_device_and_device2();
-    test_device_max();
-    test_no_device_autodetect();
-    test_single_values_parsed();
-    test_comments_and_empty_lines();
-    test_device_out_of_range_ignored();
-    test_connector_and_gamma_size();
-    test_gamma_size_out_of_range_reset();
-    test_connector_default_empty();
-    test_validation_clamps_temp();
+	test_single_device_legacy();
+	test_device1_device2();
+	test_mixed_device_and_device2();
+	test_device_max();
+	test_no_device_autodetect();
+	test_single_values_parsed();
+	test_comments_and_empty_lines();
+	test_device_out_of_range_ignored();
+	test_connector_and_gamma_size();
+	test_gamma_size_out_of_range_reset();
+	test_connector_default_empty();
+	test_validation_clamps_temp();
 
-    printf("\n=== Results: %d passed, %d failed ===\n", pass_count, fail_count);
-    return fail_count > 0 ? 1 : 0;
+	printf("\n=== Results: %d passed, %d failed ===\n", pass_count,
+	       fail_count);
+	return fail_count > 0 ? 1 : 0;
 }
