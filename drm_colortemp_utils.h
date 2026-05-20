@@ -2,12 +2,24 @@
 #define DRM_COLORTEMP_UTILS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Color temperature to RGB multipliers (Tanner Helland algorithm)
-void temp_to_rgb(int temp, double *red, double *green, double *blue);
+void temp_to_rgb (int temp, double *red, double *green, double *blue);
 
 // Fill pre-allocated gamma LUT arrays for given temperature and brightness
-void fill_gamma_luts(int gamma_size, int temp, double brightness,
-                     uint16_t *red, uint16_t *green, uint16_t *blue);
+void fill_gamma_luts (int gamma_size, int temp, double brightness,
+		      uint16_t * red, uint16_t * green, uint16_t * blue);
+
+/**
+ * Safe integer parsing with range validation.
+ * 
+ * @param str String to parse
+ * @param out Output integer value
+ * @param min Minimum allowed value
+ * @param max Maximum allowed value
+ * @return true on success, false on parse error or out-of-range
+ */
+bool safe_atoi (const char *str, int *out, int min, int max);
 
 #endif
