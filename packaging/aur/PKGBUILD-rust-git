@@ -1,0 +1,70 @@
+# Maintainer: JuanJo Ciarlante <jjo@users.noreply.github.com>
+#
+# VCS PKGBUILD for the Rust rewrite. Tracks `main` and rebuilds on demand.
+pkgname=drm-colortemp-git
+_pkgname=drm-colortemp
+pkgver=2.0.0.r0.g0000000
+pkgrel=1
+pkgdesc="DRM color temperature control for COSMIC DE (Rust rewrite, git)"
+arch=('x86_64')
+url="https://github.com/jjo/drm-colortemp"
+license=('Apache-2.0')
+depends=('gcc-libs')
+optdepends=('libnotify: desktop notifications')
+makedepends=('rust' 'cargo' 'git')
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname")
+backup=('etc/default/drm-colortemp.conf')
+source=("$_pkgname::git+https://github.com/jjo/drm-colortemp.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_pkgname"
+  git describe --long --tags --abbrev=7 2>/dev/null \
+    | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' \
+    || printf "0.0.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$_pkgname"
+  export CARGO_HOME="$srcdir/.cargo"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_pkgname"
+  export CARGO_HOME="$srcdir/.cargo"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --all-features
+}
+
+check() {
+  cd "$_pkgname"
+  export CARGO_HOME="$srcdir/.cargo"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$_pkgname"
+
+  install -Dm755 target/release/drm-colortemp-rs "$pkgdir/usr/bin/drm-colortemp"
+  install -Dm755 scripts/drm-colortemp-notify.sh    "$pkgdir/usr/bin/drm-colortemp-notify.sh"
+  install -Dm755 scripts/drm-colortemp-notifier.sh  "$pkgdir/usr/bin/drm-colortemp-notifier.sh"
+
+  install -Dm644 drm-colortemp.conf "$pkgdir/etc/default/drm-colortemp.conf"
+
+  install -Dm644 scripts/drm-colortemp.service \
+    "$pkgdir/usr/lib/systemd/system/drm-colortemp.service"
+  install -Dm644 scripts/drm-colortemp-notifier.service \
+    "$pkgdir/usr/lib/systemd/system/drm-colortemp-notifier.service"
+
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
+  install -Dm644 LICENSE   "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
+
+  sed -i 's|/usr/local/bin|/usr/bin|g' \
+    "$pkgdir/usr/lib/systemd/system/drm-colortemp.service" \
+    "$pkgdir/usr/lib/systemd/system/drm-colortemp-notifier.service" \
+    "$pkgdir/usr/bin/drm-colortemp-notifier.sh"
+}

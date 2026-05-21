@@ -39,11 +39,11 @@ Press Ctrl+Alt+F3 then F2 to apply warm 3500K
 
 ## Manual Implementation
 
-The daemon calls `/usr/local/bin/drm-colortemp-notify.sh` which you can also call manually:
+The daemon calls `scripts/drm-colortemp-notify.sh` which you can also call manually:
 
 ```bash
 # Test notification
-sudo /usr/local/bin/drm-colortemp-notify.sh your_username 3500 night
+sudo ./scripts/drm-colortemp-notify.sh your_username 3500 night
 ```
 
 ## Troubleshooting

@@ -13,21 +13,42 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install OS deps (dpkg + legacy C build for legacy-test)
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libdrm-dev linux-libc-dev
+        sudo apt-get install -y build-essential libdrm-dev linux-libc-dev dpkg-dev
 
-    - name: Build binaries
-      run: make
+    - name: Build Rust binary
+      run: make rust-build
 
-    - name: Run unit tests
-      run: make test
+    - name: Run Rust tests
+      run: make rust-test
 
-    - name: Test tool help
-      run: |
-        ./drm_colortemp -h
-        ./drm_colortemp_daemon -h
+    - name: Clippy (warnings = errors)
+      run: cargo clippy --all-targets -- -D warnings
+
+    - name: Build legacy C binaries (sanity)
+      run: make legacy
+
+    - name: Run legacy C tests
+      run: make legacy-test
+
+    - name: Smoke-test Rust CLI help
+      run: ./target/release/drm-colortemp-rs --help
 
     - name: Build deb package
       run: make deb VERSION=0.0.0-dev
@@ -35,13 +56,11 @@ jobs:
     - name: Verify deb package
       run: dpkg-deb --info build-deb/*.deb
 
-    - name: Upload binaries
+    - name: Upload Rust binary
       uses: actions/upload-artifact@v4
       with:
-        name: drm-colortemp-binaries
-        path: |
-          drm_colortemp
-          drm_colortemp_daemon
+        name: drm-colortemp-rs
+        path: target/release/drm-colortemp-rs
         retention-days: 30
 
     - name: Upload deb package

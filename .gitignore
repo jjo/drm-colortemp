@@ -29,3 +29,15 @@ Thumbs.db
 
 # Test files
 test_*
+
+
+# Added by cargo
+
+/target
+
+# Debian package build dir
+build-deb/
+
+# Agent / IDE assistant local caches
+.claude/
+.hermes/

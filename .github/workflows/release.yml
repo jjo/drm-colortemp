@@ -15,40 +15,99 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install OS deps
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libdrm-dev linux-libc-dev
+        sudo apt-get install -y build-essential libdrm-dev linux-libc-dev dpkg-dev
 
-    - name: Build binaries
-      run: make
+    - name: Build Rust binary
+      run: make rust-build
+
+    - name: Run tests
+      run: make rust-test
 
     - name: Create release tarball
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
+        VERSION=${GITHUB_REF#refs/tags/v}
         PACKAGE_NAME="drm-colortemp-${VERSION}"
         mkdir -p "${PACKAGE_NAME}"
 
-        # Copy binaries
-        cp drm_colortemp drm_colortemp_daemon "${PACKAGE_NAME}/"
+        # Built Rust binary (consumers don't need to rebuild)
+        cp target/release/drm-colortemp-rs "${PACKAGE_NAME}/drm-colortemp"
 
-        # Copy source and config files
-        cp *.c *.conf *.sh Makefile README.md NOTIFICATIONS.md "${PACKAGE_NAME}/"
+        # Source trees
+        cp -r src src-c packaging "${PACKAGE_NAME}/"
+        cp -r scripts "${PACKAGE_NAME}/"
+        cp Cargo.toml Cargo.lock Makefile README.md NOTIFICATIONS.md CONTRIBUTING.md LICENSE "${PACKAGE_NAME}/"
+        cp drm-colortemp.conf "${PACKAGE_NAME}/" || true
 
-        # Copy systemd services
-        cp *.service "${PACKAGE_NAME}/"
-
-        # Create tarball
         tar czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
-
-        # Create checksums
         sha256sum "${PACKAGE_NAME}.tar.gz" > "${PACKAGE_NAME}.tar.gz.sha256"
 
     - name: Build deb package
       run: |
         VERSION=${GITHUB_REF#refs/tags/v}
         make deb VERSION=${VERSION}
-        sha256sum build-deb/*.deb > build-deb/drm-colortemp_${VERSION}_$(dpkg --print-architecture).deb.sha256
+        ARCH=$(dpkg --print-architecture)
+        sha256sum build-deb/drm-colortemp_${VERSION}_${ARCH}.deb \
+          > build-deb/drm-colortemp_${VERSION}_${ARCH}.deb.sha256
+
+    - name: Extract changelog section for this tag
+      id: changelog
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        # Grab everything between `## [VERSION] - ...` and the next `## [`.
+        # awk handles the case where the section is the last in the file.
+        awk -v ver="$VERSION" '
+          $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+          capture && /^## \[/      { capture=0 }
+          capture                  { print }
+        ' CHANGELOG.md > release-notes.md
+        if [ ! -s release-notes.md ]; then
+          echo "No CHANGELOG section found for v${VERSION}; falling back to git log." >&2
+          {
+            echo "## Changes"
+            echo ""
+            git log --pretty='- %s (%h)' "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo HEAD)..HEAD"
+          } > release-notes.md
+        fi
+        cat >> release-notes.md <<'INSTALL'
+
+        ## Installation
+
+        ### Debian / Ubuntu
+
+        ```bash
+        sudo apt install ./drm-colortemp_*.deb
+        sudo systemctl enable --now drm-colortemp
+        ```
+
+        ### Arch Linux (AUR)
+
+        ```bash
+        # Versioned package (release tarball)
+        yay -S drm-colortemp
+        # Or VCS package (tracks main)
+        yay -S drm-colortemp-git
+        ```
+
+        ### From source
+
+        ```bash
+        tar xzf drm-colortemp-*.tar.gz
+        cd drm-colortemp-*
+        cargo build --release          # requires rustc >= 1.70
+        sudo make rust-install
+        ```
+
+        ## Requirements
+
+        - Linux with DRM/KMS support
+        - For daemon mode: root + access to `/dev/dri/cardN`
+        INSTALL
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -58,42 +117,6 @@ jobs:
           drm-colortemp-*.tar.gz.sha256
           build-deb/*.deb
           build-deb/*.deb.sha256
-        body: |
-          ## Installation
-
-          ### Option 1: Debian package (recommended)
-
-          ```bash
-          sudo apt install ./drm-colortemp_*.deb
-          sudo systemctl enable --now drm-colortemp-daemon
-          ```
-
-          ### Option 2: From tarball
-
-          ```bash
-          # Download and extract
-          tar xzf drm-colortemp-*.tar.gz
-          cd drm-colortemp-*
-
-          # Install dependencies
-          sudo apt install build-essential libdrm-dev linux-libc-dev libnotify-bin
-
-          # If you downloaded pre-built binaries, skip to install
-          # Otherwise compile first:
-          make
-
-          # Install
-          sudo ./install_daemon.sh
-          ```
-
-          ## What's New
-
-          See [README.md](README.md) for full documentation.
-
-          ## Requirements
-
-          - Pop!_OS / Ubuntu with COSMIC DE
-          - Linux kernel with DRM/KMS support
-          - Root access
+        body_path: release-notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

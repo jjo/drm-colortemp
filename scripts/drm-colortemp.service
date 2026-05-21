@@ -1,0 +1,28 @@
+[Unit]
+Description=DRM Color Temperature Daemon
+Documentation=https://github.com/jjo/drm-colortemp
+After=display-manager.service
+Wants=display-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/drm-colortemp --daemon
+Restart=on-failure
+RestartSec=5s
+Environment=RUST_LOG=info
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# Daemon only reads the config; ProtectSystem=strict already keeps /etc read-only.
+# Path matches `src/main.rs: DEFAULT_DAEMON_CONFIG` and the .deb conffile.
+ReadOnlyPaths=/etc/default/drm-colortemp.conf
+PrivateTmp=true
+
+# Allow DRM access
+DeviceAllow=/dev/dri/card0 rw
+DeviceAllow=/dev/dri/renderD128 rw
+
+[Install]
+WantedBy=multi-user.target

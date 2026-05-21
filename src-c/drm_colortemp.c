@@ -143,7 +143,9 @@ int main(int argc, char *argv[])
 	if (fd < 0) {
 		DRM_LOG_ERR("Failed to open DRM device: %s", device);
 		fprintf(stderr, "\nAvailable DRM devices:\n");
-		system("ls -la /dev/dri/ 2>/dev/null");
+		if (system("ls -la /dev/dri/ 2>/dev/null") != 0) {
+			/* Ignore return value, just list devices */
+		}
 		fprintf(stderr,
 			"\nTry running with sudo or adding your user to the 'video' group\n");
 		fprintf(stderr,
