@@ -70,8 +70,9 @@ fn apply_temperature(config: &Config, temp: u32) -> Result<(), &'static str> {
                 continue;
             }
         };
-        // Compositor may already own master; we keep going either way.
-        device::try_become_master(&dev);
+        // Don't grab SET_MASTER. C daemon doesn't; SETGAMMA works as long as
+        // the compositor has released the master (e.g. on TTY switch) or we
+        // hold raw rw access to the right card.
 
         let res = match drm::get_resources(dev.fd()) {
             Ok(r) => r,
@@ -149,6 +150,10 @@ pub fn run(config_path: &str) -> Result<(), DaemonError> {
     let mut last_check = Instant::now() - check_interval;
     let mut last_applied_temp: Option<u32> = None;
     let mut prev_vt: Option<Option<i32>> = None;
+    // Backoff when SET_GAMMA keeps failing (compositor owns DRM master).
+    // Reset on success or VT change.
+    let failure_backoff = Duration::from_secs(30);
+    let mut last_failure: Option<Instant> = None;
 
     while !STOP_REQUESTED.load(Ordering::Relaxed) {
         // SIGHUP → explicit reload.
@@ -184,20 +189,38 @@ pub fn run(config_path: &str) -> Result<(), DaemonError> {
         let active_vt = vt::active_vt();
         let target_temp = choose_target_temp(&config, active_vt);
 
-        if prev_vt != Some(active_vt) {
+        let vt_changed = prev_vt != Some(active_vt);
+        if vt_changed {
             if let Some(prev) = prev_vt {
                 debug!("VT changed: {prev:?} -> {active_vt:?}");
             }
             prev_vt = Some(active_vt);
+            // VT switch is the canonical recovery point (compositor may have
+            // released master). Clear backoff so the next attempt fires now.
+            last_failure = None;
         }
 
+        let backoff_ok = last_failure
+            .map(|t| now.duration_since(t) >= failure_backoff)
+            .unwrap_or(true);
         let should_apply = last_applied_temp != Some(target_temp)
-            && now.duration_since(last_check) >= Duration::from_millis(200);
+            && now.duration_since(last_check) >= Duration::from_millis(200)
+            && backoff_ok;
         if should_apply {
             info!("Applying {target_temp}K (VT={:?})", active_vt);
             match apply_temperature(&config, target_temp) {
-                Ok(()) => last_applied_temp = Some(target_temp),
-                Err(e) => error!("Apply {target_temp}K failed: {e}"),
+                Ok(()) => {
+                    last_applied_temp = Some(target_temp);
+                    last_failure = None;
+                }
+                Err(e) => {
+                    if last_failure.is_none() {
+                        error!("Apply {target_temp}K failed: {e} (backing off {failure_backoff:?})");
+                    } else {
+                        debug!("Apply {target_temp}K still failing: {e}");
+                    }
+                    last_failure = Some(now);
+                }
             }
             last_check = now;
         }

@@ -1,7 +1,7 @@
 //! DRM device open/auto-detect/access checks.
 
 use crate::drm;
-use log::{debug, warn};
+use log::debug;
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -140,12 +140,13 @@ fn open_raw(path: &str) -> Result<DrmDevice, DeviceError> {
     })
 }
 
-/// Best-effort DRM master grab. Logs a warning on failure and continues.
+/// Best-effort DRM master grab. Logs at debug on failure and continues.
+/// Used by the one-shot CLI tool; the daemon skips this and relies on the
+/// compositor releasing the master on TTY switch.
 pub fn try_become_master(dev: &DrmDevice) {
     if let Err(e) = drm::try_set_master(dev.fd()) {
-        warn!(
-            "Could not become DRM master on {} ({}): compositor likely running. \
-             Run from a TTY (Ctrl+Alt+F3) or stop the compositor if gamma changes fail.",
+        debug!(
+            "Could not become DRM master on {} ({}): compositor likely running.",
             dev.path(),
             e
         );
