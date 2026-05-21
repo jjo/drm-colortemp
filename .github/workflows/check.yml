@@ -18,17 +18,21 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential libdrm-dev linux-libc-dev shellcheck
     
-    - name: Check C code compilation warnings
+    - name: Check legacy C code compilation warnings
+      # C sources moved to src-c/ in v2.0. Keep -Werror to catch regressions
+      # in the still-supported legacy build.
       run: |
-        gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_device.c -o /dev/null
-        gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_colortemp.c -o /dev/null
-        gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -c drm_colortemp_daemon_inotify.c -o /dev/null
-        gcc -Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -DTEST_BUILD -c drm_colortemp_daemon_inotify.c -o /dev/null
-    
+        CFLAGS="-Wall -Wextra -Werror -I/usr/include/libdrm -I/usr/include/drm -Isrc-c"
+        gcc $CFLAGS -c src-c/drm_device.c                  -o /dev/null
+        gcc $CFLAGS -c src-c/drm_colortemp.c               -o /dev/null
+        gcc $CFLAGS -c src-c/drm_colortemp_daemon_inotify.c -o /dev/null
+        gcc $CFLAGS -DTEST_BUILD -c src-c/drm_colortemp_daemon_inotify.c -o /dev/null
+
     - name: Check shell scripts
+      # Shell scripts moved to scripts/ in v2.0.
       run: |
-        shellcheck -x *.sh || true
-    
+        shellcheck -x scripts/*.sh || true
+
     - name: Verify config file syntax
       run: |
         bash -n drm-colortemp.conf
