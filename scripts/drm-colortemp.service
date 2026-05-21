@@ -6,7 +6,7 @@ Wants=display-manager.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/drm-colortemp --daemon
+ExecStart=/usr/bin/drm-colortemp --daemon
 Restart=on-failure
 RestartSec=5s
 Environment=RUST_LOG=info
@@ -20,9 +20,13 @@ ProtectHome=true
 ReadOnlyPaths=/etc/default/drm-colortemp.conf
 PrivateTmp=true
 
-# Allow DRM access
-DeviceAllow=/dev/dri/card0 rw
-DeviceAllow=/dev/dri/renderD128 rw
+# Allow all DRM devices. Hard-coding card0 breaks on machines where the
+# active GPU is card1+ (e.g. iGPU at /dev/dri/card1 with EVDI virtual cards
+# at card0/card2). char-drm covers every /dev/dri/* including future renderD*.
+DeviceAllow=char-drm rw
+# Required for VT_GETSTATE (active VT detection)
+DeviceAllow=/dev/tty0 r
+DeviceAllow=/dev/console r
 
 [Install]
 WantedBy=multi-user.target
