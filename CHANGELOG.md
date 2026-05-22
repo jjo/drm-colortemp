@@ -10,6 +10,33 @@ section heading format strict: `## [X.Y.Z] - YYYY-MM-DD`.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-05-21
+
+### Fixed
+- Systemd unit (`scripts/drm-colortemp.service`) used
+  `DeviceAllow=/dev/dri/card0 rw`, which blocked the daemon's cgroup
+  device filter from opening any other DRM node. On machines where the
+  active GPU isn't `card0` (e.g. ThinkPad T480s: `card0`/`card2` are
+  EVDI virtual cards, `card1` is the real Intel iGPU), auto-detect fell
+  back to a virtual card whose CRTCs report `mode_valid=0`, and gamma
+  application failed silently with `no CRTCs accepted the gamma change`.
+  Replaced with `DeviceAllow=char-drm rw` to cover every `/dev/dri/*`.
+- Service `ExecStart` aligned with the `.deb` install path (`/usr/bin`).
+- Added `DeviceAllow` entries for `/dev/tty0` and `/dev/console`, needed
+  by `VT_GETSTATE` under `ProtectSystem=strict`.
+
+### Changed
+- `apply_temperature` no longer calls `drmSetMaster`. The C daemon never
+  did either, and grabbing the master while the compositor holds it is
+  pointless; `SETGAMMA` succeeds whenever the compositor has released
+  the master (TTY switch) or we hold raw rw access on the right card.
+- 30 s failure backoff after a failed apply, reset on success or VT
+  change. Stops the log filling up every `CHECK_INTERVAL` when the
+  compositor still owns master.
+- Demoted the `try_become_master` failure log from `warn` to `debug`.
+  The CLI tool still calls it best-effort; the warning was noise on
+  every COSMIC session.
+
 ## [2.0.0] - 2026-05-21
 
 ### Added
@@ -96,7 +123,8 @@ section heading format strict: `## [X.Y.Z] - YYYY-MM-DD`.
   DE, working around missing `wlr-gamma-control-unstable-v1` protocol
   support on the Pop!\_OS COSMIC compositor (`7cb2c59`).
 
-[Unreleased]: https://github.com/jjo/drm-colortemp/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/jjo/drm-colortemp/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/jjo/drm-colortemp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/jjo/drm-colortemp/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/jjo/drm-colortemp/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jjo/drm-colortemp/compare/v1.2.0...v1.3.0

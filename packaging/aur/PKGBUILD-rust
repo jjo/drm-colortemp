@@ -4,7 +4,7 @@
 # Builds the single `drm-colortemp` binary from `Cargo.toml` and ships the
 # v2.x systemd unit + notifier scripts.
 pkgname=drm-colortemp
-pkgver=2.0.0
+pkgver=2.0.1
 pkgrel=1
 pkgdesc="DRM color temperature control for COSMIC DE (Rust rewrite, wlr-gamma-control workaround)"
 arch=('x86_64')
