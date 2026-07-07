@@ -1,0 +1,15 @@
+[Desktop Entry]
+Name=Color Temperature
+Comment=Apply screen color temperature via drm-colortemp
+Type=Application
+Exec=cosmic-applet-colortemp
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Night;Light;Color;Temperature;Gamma;
+Icon=io.github.jjo.CosmicAppletColortemp-symbolic
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

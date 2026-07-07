@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- crescent moon, symbolic style -->
+  <path fill="#bebebe" d="M9.5 1.5a6.5 6.5 0 1 0 5 10.6A5.75 5.75 0 0 1 9.5 1.5z"/>
+  <circle fill="#bebebe" cx="12.75" cy="3.25" r="0.9"/>
+</svg>

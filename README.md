@@ -96,6 +96,23 @@ You can also use the tool directly (requires TTY):
 sudo drm_colortemp -d /dev/dri/card1 -t 3500
 ```
 
+### COSMIC Panel Applet (Optional)
+
+Prefer clicking a panel icon over pressing Ctrl+Alt+F-keys? An optional COSMIC
+panel applet lives in [`applet/`](applet/). It shows a popup with
+**Auto / Night / Day** buttons; clicking one performs the VT-switch dance for
+you via a small root helper (authorized by a narrow sudoers rule).
+
+```bash
+# Requires a Rust toolchain and the daemon already installed & running
+make applet
+sudo make install-applet
+```
+
+Then add it to your panel: COSMIC Settings → Desktop → Panel → Configure panel
+applets → **Add "Color Temperature"**. See [applet/README.md](applet/README.md)
+for details.
+
 ## Configuration
 
 Edit the config file (changes apply automatically via inotify, no restart needed):

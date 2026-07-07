@@ -1,0 +1,25 @@
+[package]
+name = "cosmic-applet-colortemp"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "COSMIC panel applet for drm-colortemp: one-click screen color temperature"
+
+[dependencies]
+# Pinned to the same libcosmic revision used by pop-os/cosmic-applets (July 2026)
+# so the applet API matches. Update the rev together with any API changes.
+libcosmic = { git = "https://github.com/pop-os/libcosmic", rev = "20dfd7c236208930634881ec52d22e7a353206dd", default-features = false, features = [
+    "applet",
+    "multi-window",
+    "tokio",
+    "wayland",
+    "winit",
+] }
+tokio = { version = "1", features = ["process", "rt", "io-util"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

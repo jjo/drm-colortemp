@@ -279,6 +279,25 @@ $(C_SRC_DIR)/drm_colortemp_daemon_inotify_test.o: $(C_SRC_DIR)/drm_colortemp_dae
 # ALIASES & BACKWARD COMPATIBILITY
 # =============================================================================
 
+# =============================================================================
+# COSMIC panel applet (optional, see applet/README.md)
+# =============================================================================
+
+applet:
+	cd applet && cargo build --release
+	@echo "✓ Applet built: applet/target/release/cosmic-applet-colortemp"
+
+install-applet:
+	cd applet && ./install.sh
+
+uninstall-applet:
+	cd applet && ./uninstall.sh
+
+applet-clean:
+	cd applet && cargo clean
+
+.PHONY: applet install-applet uninstall-applet applet-clean
+
 # Default 'all' builds both (for transition period)
 all: rust legacy
 	@echo ""
@@ -319,6 +338,12 @@ help:
 	@echo "  legacy-uninstall     - Remove C version"
 	@echo "  legacy-clean         - Clean C build artifacts"
 	@echo "  legacy-deb           - Build Debian package (C version)"
+	@echo ""
+	@echo "COSMIC panel applet (optional):"
+	@echo "  applet               - Build the panel applet (Rust/libcosmic)"
+	@echo "  install-applet       - Install applet + root helper + sudoers rule"
+	@echo "  uninstall-applet     - Remove the applet"
+	@echo "  applet-clean         - Clean applet build artifacts"
 	@echo ""
 	@echo "Aliases:"
 	@echo "  all                  - Build both Rust and C versions"

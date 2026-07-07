@@ -1,0 +1,67 @@
+#!/bin/bash
+# drm-colortemp-apply — trigger drm-colortemp's gamma application without the
+# manual Ctrl+Alt+F3 / Ctrl+Alt+F2 dance.
+#
+# Switches to the TTY that the drm-colortemp daemon watches, waits long enough
+# for it to detect the VT switch and set the gamma LUT, then switches back to
+# the original VT. Must run as root (chvt requires CAP_SYS_TTY_CONFIG); the
+# applet invokes it via a narrow sudoers NOPASSWD rule.
+#
+# Usage: drm-colortemp-apply {auto|night|day}
+
+set -euo pipefail
+
+MODE="${1:-auto}"
+CONF="/etc/default/drm-colortemp.conf"
+
+# Defaults matching drm-colortemp's own defaults.
+MONITOR_TTY=3
+WARM_TTY=4
+COOL_TTY=5
+
+# Parse only the numeric keys we need (deliberately NOT sourcing the file).
+get_conf() {
+    local key="$1" val
+    [ -r "$CONF" ] || return 1
+    val=$(sed -n "s/^[[:space:]]*${key}=[\"']\{0,1\}\([0-9]\{1,\}\)[\"']\{0,1\}.*/\1/p" "$CONF" | head -1)
+    [ -n "$val" ] && printf '%s' "$val"
+}
+
+MONITOR_TTY="$(get_conf MONITOR_TTY || true)"; MONITOR_TTY="${MONITOR_TTY:-3}"
+WARM_TTY="$(get_conf WARM_TTY || true)";       WARM_TTY="${WARM_TTY:-4}"
+COOL_TTY="$(get_conf COOL_TTY || true)";       COOL_TTY="${COOL_TTY:-5}"
+
+case "$MODE" in
+    auto)  TARGET="$MONITOR_TTY" ;;
+    night) TARGET="$WARM_TTY"    ;;
+    day)   TARGET="$COOL_TTY"    ;;
+    *) echo "usage: drm-colortemp-apply {auto|night|day}" >&2; exit 2 ;;
+esac
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "must run as root (via sudo)" >&2
+    exit 1
+fi
+
+# The daemon must be running, or the VT switch will just flash a console.
+if ! systemctl is-active --quiet drm-colortemp-daemon.service \
+   && ! systemctl is-active --quiet drm-colortemp.service; then
+    echo "drm-colortemp daemon is not running: sudo systemctl enable --now drm-colortemp-daemon" >&2
+    exit 1
+fi
+
+CHVT="$(command -v chvt || echo /usr/bin/chvt)"
+FGCONSOLE="$(command -v fgconsole || echo /usr/bin/fgconsole)"
+
+CURRENT="$("$FGCONSOLE")"
+if [ "$CURRENT" = "$TARGET" ]; then
+    echo "already on TTY $TARGET" >&2
+    exit 1
+fi
+
+"$CHVT" "$TARGET"
+# Give the daemon time to detect the switch and write the gamma LUT.
+sleep 1.2
+"$CHVT" "$CURRENT"
+
+exit 0

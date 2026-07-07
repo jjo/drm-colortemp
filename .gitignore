@@ -41,3 +41,6 @@ build-deb/
 # Agent / IDE assistant local caches
 .claude/
 .hermes/
+
+# Applet build artifacts
+applet/target/
