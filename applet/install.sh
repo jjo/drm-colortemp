@@ -22,8 +22,8 @@ BIN=target/release/cosmic-applet-colortemp
 # 1. Build (as the invoking user, not root, if possible)
 if [ ! -x "$BIN" ]; then
     echo "==> Building (first build pulls libcosmic; takes ~10 min)..."
-    if command -v sudo >/dev/null && [ -n "${SUDO_USER:-}" ]; then
-        sudo -u "$SUDO_USER" cargo build --release
+    if command -v sudo >/dev/null && [ -n "$APPLET_USER" ]; then
+        sudo -u "$APPLET_USER" cargo build --release
     else
         cargo build --release
     fi

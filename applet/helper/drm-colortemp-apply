@@ -50,8 +50,10 @@ if ! systemctl is-active --quiet drm-colortemp-daemon.service \
     exit 1
 fi
 
-CHVT="$(command -v chvt || echo /usr/bin/chvt)"
-FGCONSOLE="$(command -v fgconsole || echo /usr/bin/fgconsole)"
+# Fixed paths: this runs as root via a NOPASSWD sudoers rule, so don't trust
+# PATH lookups for the privileged binaries.
+CHVT=/usr/bin/chvt
+FGCONSOLE=/usr/bin/fgconsole
 
 CURRENT="$("$FGCONSOLE")"
 if [ "$CURRENT" = "$TARGET" ]; then
@@ -60,6 +62,9 @@ if [ "$CURRENT" = "$TARGET" ]; then
 fi
 
 "$CHVT" "$TARGET"
+# From here on, make sure we switch back even if interrupted mid-sleep;
+# otherwise the user is stranded on a text console.
+trap '"$CHVT" "$CURRENT" 2>/dev/null || true' EXIT
 # Give the daemon time to detect the switch and write the gamma LUT.
 sleep 1.2
 "$CHVT" "$CURRENT"

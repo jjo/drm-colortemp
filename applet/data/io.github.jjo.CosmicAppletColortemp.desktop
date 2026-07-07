@@ -2,7 +2,7 @@
 Name=Color Temperature
 Comment=Apply screen color temperature via drm-colortemp
 Type=Application
-Exec=cosmic-applet-colortemp
+Exec=/usr/local/bin/cosmic-applet-colortemp
 Terminal=false
 Categories=COSMIC;
 Keywords=COSMIC;Applet;Night;Light;Color;Temperature;Gamma;

@@ -92,6 +92,10 @@ fn read_temps() -> (u32, u32) {
             let line = line.trim();
             for (key, slot) in [("NIGHT_TEMP=", &mut night), ("DAY_TEMP=", &mut day)] {
                 if let Some(v) = line.strip_prefix(key) {
+                    // Tolerate trailing whitespace/comments, matching the
+                    // helper script's parsing, so the popup shows the same
+                    // temps that actually get applied.
+                    let v = v.split_whitespace().next().unwrap_or("");
                     if let Ok(n) = v.trim_matches(['"', '\'']).parse::<u32>() {
                         *slot = n;
                     }
