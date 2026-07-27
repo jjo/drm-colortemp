@@ -1,0 +1,77 @@
+name: Applet
+
+# The applet builds libcosmic from a pinned git rev (~10 min cold), so it is not
+# part of the main Build workflow. Only run it when the applet or its packaging
+# actually changes; release.yml always builds it regardless.
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'applet/**'
+      - 'Makefile'
+      - '.github/workflows/applet.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'applet/**'
+      - 'Makefile'
+      - '.github/workflows/applet.yml'
+
+jobs:
+  applet:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Cache cargo (applet)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          applet/target
+        key: ${{ runner.os }}-applet-${{ hashFiles('applet/Cargo.lock') }}
+
+    - name: Install applet build deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config cmake dpkg-dev sudo \
+          libxkbcommon-dev libwayland-dev libudev-dev libssl-dev
+
+    - name: Build applet
+      run: make applet
+
+    - name: Clippy (warnings = errors)
+      working-directory: applet
+      run: cargo clippy --all-targets -- -D warnings
+
+    - name: Build applet deb
+      run: make applet-deb VERSION=0.0.0-dev
+
+    - name: Verify applet deb contents and deps
+      run: |
+        dpkg-deb --info build-deb/drm-colortemp-cosmic-applet_*.deb
+        dpkg-deb --contents build-deb/drm-colortemp-cosmic-applet_*.deb
+        # The packaged .desktop must point at /usr/bin, not the source prefix.
+        dpkg-deb --fsys-tarfile build-deb/drm-colortemp-cosmic-applet_*.deb \
+          | tar -xO ./usr/share/applications/io.github.jjo.CosmicAppletColortemp.desktop \
+          | grep -qx 'Exec=/usr/bin/cosmic-applet-colortemp'
+        # The sudoers rule must be valid and reference the packaged helper path.
+        dpkg-deb --fsys-tarfile build-deb/drm-colortemp-cosmic-applet_*.deb \
+          | tar -xO ./etc/sudoers.d/drm-colortemp-applet > /tmp/applet.sudoers
+        grep -q '/usr/bin/drm-colortemp-apply auto' /tmp/applet.sudoers
+        ! grep -q '@PRINCIPAL@\|@BINDIR@' /tmp/applet.sudoers
+        sudo visudo -cf /tmp/applet.sudoers
+
+    - name: Upload applet deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: drm-colortemp-cosmic-applet-deb
+        path: build-deb/drm-colortemp-cosmic-applet_*.deb
+        retention-days: 30

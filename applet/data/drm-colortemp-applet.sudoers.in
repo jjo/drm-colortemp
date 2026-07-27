@@ -1,0 +1,11 @@
+# Allow the principal below to trigger drm-colortemp's VT-switch helper without
+# a password. Installed by cosmic-applet-colortemp.
+#
+# Only these three exact command lines are permitted: the helper accepts no
+# other arguments, so this grants no general root access.
+#
+# Generated from this template by install.sh (a username, /usr/local/bin), the
+# .deb (%sudo, /usr/bin) and the AUR PKGBUILDs (%wheel, /usr/bin). The two
+# placeholder tokens are substituted at install/package time; keep them out of
+# these comments so the substitution does not mangle the explanation.
+@PRINCIPAL@ ALL=(root) NOPASSWD: @BINDIR@/drm-colortemp-apply auto, @BINDIR@/drm-colortemp-apply night, @BINDIR@/drm-colortemp-apply day

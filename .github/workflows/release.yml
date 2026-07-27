@@ -6,8 +6,56 @@ on:
       - 'v*'
 
 jobs:
+  # The applet is a separate cargo project pinned to a libcosmic git rev, so it
+  # gets its own job (and its own cache). `release` needs it: a broken applet
+  # build must fail the release loudly rather than quietly ship without it.
+  applet-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo (applet)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          applet/target
+        key: ${{ runner.os }}-applet-${{ hashFiles('applet/Cargo.lock') }}
+
+    - name: Install applet build deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config cmake dpkg-dev \
+          libxkbcommon-dev libwayland-dev libudev-dev libssl-dev
+
+    - name: Build applet deb
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        make applet-deb VERSION=${VERSION}
+        ARCH=$(dpkg --print-architecture)
+        sha256sum build-deb/drm-colortemp-cosmic-applet_${VERSION}_${ARCH}.deb \
+          > build-deb/drm-colortemp-cosmic-applet_${VERSION}_${ARCH}.deb.sha256
+
+    - name: Verify applet deb
+      run: dpkg-deb --info build-deb/drm-colortemp-cosmic-applet_*.deb
+
+    - name: Upload applet deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: drm-colortemp-cosmic-applet-deb
+        path: |
+          build-deb/drm-colortemp-cosmic-applet_*.deb
+          build-deb/drm-colortemp-cosmic-applet_*.deb.sha256
+        retention-days: 1
+
   release:
     runs-on: ubuntu-latest
+    needs: applet-deb
 
     permissions:
       contents: write
@@ -38,9 +86,12 @@ jobs:
         # Built Rust binary (consumers don't need to rebuild)
         cp target/release/drm-colortemp-rs "${PACKAGE_NAME}/drm-colortemp"
 
-        # Source trees
+        # Source trees. `applet` is included so the AUR applet PKGBUILDs and
+        # source installs can build from the release tarball.
         cp -r src src-c packaging "${PACKAGE_NAME}/"
         cp -r scripts "${PACKAGE_NAME}/"
+        # Exclude the local build dir if the tarball is ever cut outside CI.
+        tar c --exclude=target -C . applet | tar x -C "${PACKAGE_NAME}/"
         cp Cargo.toml Cargo.lock Makefile README.md NOTIFICATIONS.md CONTRIBUTING.md LICENSE "${PACKAGE_NAME}/"
         cp drm-colortemp.conf "${PACKAGE_NAME}/" || true
 
@@ -54,6 +105,12 @@ jobs:
         ARCH=$(dpkg --print-architecture)
         sha256sum build-deb/drm-colortemp_${VERSION}_${ARCH}.deb \
           > build-deb/drm-colortemp_${VERSION}_${ARCH}.deb.sha256
+
+    - name: Download applet deb
+      uses: actions/download-artifact@v4
+      with:
+        name: drm-colortemp-cosmic-applet-deb
+        path: build-deb/
 
     - name: Extract changelog section for this tag
       id: changelog
@@ -83,6 +140,9 @@ jobs:
         ```bash
         sudo apt install ./drm-colortemp_*.deb
         sudo systemctl enable --now drm-colortemp
+
+        # Optional: COSMIC panel applet (one-click Auto / Night / Day)
+        sudo apt install ./drm-colortemp-cosmic-applet_*.deb
         ```
 
         ### Arch Linux (AUR)
@@ -92,6 +152,9 @@ jobs:
         yay -S drm-colortemp
         # Or VCS package (tracks main)
         yay -S drm-colortemp-git
+
+        # Optional: COSMIC panel applet
+        yay -S cosmic-applet-colortemp
         ```
 
         ### From source
@@ -107,6 +170,9 @@ jobs:
 
         - Linux with DRM/KMS support
         - For daemon mode: root + access to `/dev/dri/cardN`
+        - For the COSMIC applet: membership in the `sudo` group on Debian/Ubuntu
+          (`wheel` on Arch) — that is who its `/etc/sudoers.d` rule authorizes to
+          run the VT-switch helper.
         INSTALL
 
     - name: Create Release

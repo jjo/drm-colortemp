@@ -103,11 +103,23 @@ panel applet lives in [`applet/`](applet/). It shows a popup with
 **Auto / Night / Day** buttons; clicking one performs the VT-switch dance for
 you via a small root helper (authorized by a narrow sudoers rule).
 
+It ships as its own package, so the daemon package stays free of libcosmic's
+wayland/xkbcommon runtime dependencies:
+
 ```bash
-# Requires a Rust toolchain and the daemon already installed & running
+# Debian / Ubuntu — attached to every release
+sudo apt install ./drm-colortemp-cosmic-applet_*.deb
+
+# Arch (AUR)
+yay -S cosmic-applet-colortemp
+
+# Or from source (requires a Rust toolchain)
 make applet
 sudo make install-applet
 ```
+
+Packaged installs authorize the helper for the `sudo` group (Debian/Ubuntu) or
+`wheel` (Arch); a source install authorizes only the user running `install.sh`.
 
 Then add it to your panel: COSMIC Settings → Desktop → Panel → Configure panel
 applets → **Add "Color Temperature"**. See [applet/README.md](applet/README.md)

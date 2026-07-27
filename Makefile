@@ -73,7 +73,8 @@ DEB_DIR  = build-deb/$(DEB_PKG)
 .PHONY: deb
 deb: rust-build
 	@echo "Building Debian package $(DEB_PKG).deb..."
-	rm -rf build-deb
+	# Only our own staging dir: `applet-deb` stages a sibling under build-deb/.
+	rm -rf $(DEB_DIR)
 	# Cargo names the binary $(CARGO_BIN); ship as /usr/bin/$(RUST_TOOL).
 	install -D -m 755 target/release/$(CARGO_BIN) $(DEB_DIR)/usr/bin/$(RUST_TOOL)
 	# Notifier helpers stay shell scripts.
@@ -118,6 +119,105 @@ deb: rust-build
 	dpkg-deb --build --root-owner-group $(DEB_DIR) build-deb/
 	@echo ""
 	@echo "✓ Built build-deb/$(DEB_PKG).deb"
+
+# =============================================================================
+# DEBIAN PACKAGING (COSMIC applet)
+# =============================================================================
+# Separate binary package: the applet drags in libcosmic wayland/xkbcommon/X11
+# runtime libs that the headless daemon package has no business depending on.
+# Shipped alongside the main .deb by .github/workflows/release.yml.
+
+APPLET_BIN     = cosmic-applet-colortemp
+APPLET_PKG     = drm-colortemp-cosmic-applet
+APPLET_DEB_PKG = $(APPLET_PKG)_$(VERSION)_$(ARCH)
+APPLET_DEB_DIR = build-deb/$(APPLET_DEB_PKG)
+# Packages cannot know which user runs the panel, so the sudoers rule is granted
+# to a group. `sudo` is the Debian/Ubuntu admin group (Arch uses `wheel`).
+APPLET_SUDO_GROUP ?= sudo
+# Minimum daemon version the applet's helper expects (VT-switch semantics).
+APPLET_DAEMON_MIN ?= 2.0.0
+
+# Runtime libraries libcosmic/winit dlopen() rather than link: they carry no
+# DT_NEEDED entry, so they must be listed by hand. Required under COSMIC.
+APPLET_DLOPEN_DEPS ?= libwayland-client0
+# winit's X11 backend is also dlopen()ed. Unused on COSMIC (Wayland), so these
+# are Recommends, not Depends.
+APPLET_X11_DEPS ?= libx11-6, libx11-xcb1, libxcb1, libxi6, libxkbcommon-x11-0
+# Fallback when dpkg is unavailable to map sonames to packages (e.g. building
+# the .deb on a non-Debian host). Mirrors the binary's current DT_NEEDED set.
+APPLET_STATIC_DEPS ?= libc6, libgcc-s1, libxkbcommon0
+# Note: the applet renders with tiny-skia/softbuffer (software), not wgpu, so it
+# needs no Vulkan or GL runtime — only fonts, hence the fonts-dejavu-core
+# Recommends below.
+
+.PHONY: applet-deb debs
+applet-deb: applet
+	@echo "Building Debian package $(APPLET_DEB_PKG).deb..."
+	rm -rf $(APPLET_DEB_DIR)
+	install -D -m 755 applet/target/release/$(APPLET_BIN) $(APPLET_DEB_DIR)/usr/bin/$(APPLET_BIN)
+	# Root helper doing the chvt dance; the only privileged piece.
+	install -D -m 755 applet/helper/drm-colortemp-apply $(APPLET_DEB_DIR)/usr/bin/drm-colortemp-apply
+	install -D -m 644 applet/data/io.github.jjo.CosmicAppletColortemp.desktop \
+		$(APPLET_DEB_DIR)/usr/share/applications/io.github.jjo.CosmicAppletColortemp.desktop
+	install -D -m 644 applet/data/icons/io.github.jjo.CosmicAppletColortemp-symbolic.svg \
+		$(APPLET_DEB_DIR)/usr/share/icons/hicolor/scalable/apps/io.github.jjo.CosmicAppletColortemp-symbolic.svg
+	install -D -m 644 applet/README.md $(APPLET_DEB_DIR)/usr/share/doc/$(APPLET_PKG)/README.md
+	# Sources default to the source-install prefix; rewrite for packaged layout.
+	sed -i 's|/usr/local/bin|/usr/bin|g' \
+		$(APPLET_DEB_DIR)/usr/share/applications/io.github.jjo.CosmicAppletColortemp.desktop
+	# Sudoers rule from the shared template, granted to a group rather than a user.
+	mkdir -p $(APPLET_DEB_DIR)/etc/sudoers.d
+	sed -e 's|@PRINCIPAL@|%$(APPLET_SUDO_GROUP)|g' -e 's|@BINDIR@|/usr/bin|g' \
+		applet/data/drm-colortemp-applet.sudoers.in \
+		> $(APPLET_DEB_DIR)/etc/sudoers.d/drm-colortemp-applet
+	chmod 0440 $(APPLET_DEB_DIR)/etc/sudoers.d/drm-colortemp-applet
+	# Reject a malformed rule at build time rather than at the user's install.
+	if command -v visudo >/dev/null 2>&1; then \
+		visudo -cf $(APPLET_DEB_DIR)/etc/sudoers.d/drm-colortemp-applet >/dev/null; \
+	fi
+	mkdir -p $(APPLET_DEB_DIR)/DEBIAN
+	# Library deps: derive the linked ones from DT_NEEDED so a libcosmic bump
+	# that adds a real link dependency is picked up automatically, then union in
+	# APPLET_DLOPEN_DEPS. libcosmic/winit dlopen() their Wayland and X11 clients,
+	# so those never appear in DT_NEEDED and must be named explicitly.
+	set -e; \
+	SHLIB_DEPS=$$(objdump -p applet/target/release/$(APPLET_BIN) 2>/dev/null \
+		| awk '/NEEDED/ {print $$2}' \
+		| while read -r so; do \
+			dpkg -S "*/$$so" 2>/dev/null | head -1 | cut -d: -f1; \
+		  done | sort -u | paste -sd, - | sed 's/,/, /g'); \
+	if [ -z "$$SHLIB_DEPS" ]; then \
+		echo "WARNING: could not derive DT_NEEDED deps (no dpkg?); using a static list" >&2; \
+		SHLIB_DEPS="$(APPLET_STATIC_DEPS)"; \
+	fi; \
+	{ \
+		echo "Package: $(APPLET_PKG)"; \
+		echo "Version: $(VERSION)"; \
+		echo "Architecture: $(ARCH)"; \
+		echo "Maintainer: jjo <jjo@users.noreply.github.com>"; \
+		echo "Depends: drm-colortemp (>= $(APPLET_DAEMON_MIN)), sudo, kbd, $$SHLIB_DEPS, $(APPLET_DLOPEN_DEPS)"; \
+		echo "Recommends: $(APPLET_X11_DEPS), fonts-dejavu-core"; \
+		echo "Section: x11"; \
+		echo "Priority: optional"; \
+		echo "Homepage: https://github.com/jjo/drm-colortemp"; \
+		echo "Description: COSMIC panel applet for drm-colortemp"; \
+		echo " Panel applet exposing one-click Auto / Night / Day screen color"; \
+		echo " temperature for the drm-colortemp daemon on COSMIC Desktop."; \
+		echo " Runs a narrowly scoped root helper via sudo to perform the VT switch"; \
+		echo " that lets the daemon apply the gamma LUT."; \
+	} > $(APPLET_DEB_DIR)/DEBIAN/control
+	echo "/etc/sudoers.d/drm-colortemp-applet" > $(APPLET_DEB_DIR)/DEBIAN/conffiles
+	printf '#!/bin/sh\nset -e\nif [ "$$1" = "configure" ]; then\n    if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n        gtk-update-icon-cache -q /usr/share/icons/hicolor || true\n    fi\nfi\n' \
+		> $(APPLET_DEB_DIR)/DEBIAN/postinst
+	printf '#!/bin/sh\nset -e\nif [ "$$1" = "remove" ] || [ "$$1" = "purge" ]; then\n    if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n        gtk-update-icon-cache -q /usr/share/icons/hicolor || true\n    fi\nfi\n' \
+		> $(APPLET_DEB_DIR)/DEBIAN/postrm
+	chmod 755 $(APPLET_DEB_DIR)/DEBIAN/postinst $(APPLET_DEB_DIR)/DEBIAN/postrm
+	dpkg-deb --build --root-owner-group $(APPLET_DEB_DIR) build-deb/
+	@echo ""
+	@echo "✓ Built build-deb/$(APPLET_DEB_PKG).deb"
+
+# Both packages in one shot (what release CI ships).
+debs: deb applet-deb
 
 # =============================================================================
 # C IMPLEMENTATION (LEGACY) - PREFIXED TARGETS
@@ -218,7 +318,6 @@ legacy-deb: legacy
 	@echo "Building Debian package..."
 	@echo "Note: Use 'make deb' for Rust version"
 	@echo "This builds legacy C version package"
-	rm -rf build-deb
 	VERSION=1.3.0 ARCH=$(shell dpkg --print-architecture 2>/dev/null || echo amd64) DEB_PKG=drm-colortemp-legacy_$(VERSION)_$(ARCH) DEB_DIR=build-deb/$(DEB_PKG) bash -c '\
 	mkdir -p $$(dirname $$DEB_DIR) && \
 	rm -rf $$DEB_DIR && \
@@ -326,7 +425,9 @@ help:
 	@echo "  rust-install         - Install Rust version"
 	@echo "  rust-uninstall       - Remove Rust version"
 	@echo "  rust-clean           - Clean Rust build artifacts"
-	@echo "  deb VERSION=X.Y.Z    - Build Debian package (Rust)"
+	@echo "  deb VERSION=X.Y.Z    - Build Debian package (Rust daemon)"
+	@echo "  applet-deb VERSION=X.Y.Z - Build Debian package (COSMIC applet)"
+	@echo "  debs VERSION=X.Y.Z   - Build both .debs (what release CI ships)"
 	@echo ""
 	@echo "Legacy (C version):"
 	@echo "  legacy               - Build both tool and daemon"
@@ -344,6 +445,7 @@ help:
 	@echo "  install-applet       - Install applet + root helper + sudoers rule"
 	@echo "  uninstall-applet     - Remove the applet"
 	@echo "  applet-clean         - Clean applet build artifacts"
+	@echo "  applet-deb VERSION=X.Y.Z - Package the applet as a .deb"
 	@echo ""
 	@echo "Aliases:"
 	@echo "  all                  - Build both Rust and C versions"

@@ -29,6 +29,25 @@ user only. The applet itself runs unprivileged.
 
 ## Install
 
+### From a package (recommended)
+
+The applet ships as its own package so the headless daemon does not inherit
+libcosmic's runtime dependencies.
+
+```sh
+# Debian / Ubuntu — attached to each GitHub release
+sudo apt install ./drm-colortemp-cosmic-applet_*.deb
+
+# Arch (AUR)
+yay -S cosmic-applet-colortemp        # or cosmic-applet-colortemp-git
+```
+
+Packages install to `/usr/bin` and authorize the helper for a **group**
+(`%sudo` on Debian/Ubuntu, `%wheel` on Arch) rather than a single user, since a
+package cannot know who runs the panel. Make sure your user is in that group.
+
+### From source
+
 From the repository root:
 
 ```sh
@@ -38,15 +57,25 @@ sudo make install-applet
 
 Or from this directory: `cargo build --release && sudo ./install.sh`
 
+The source install uses `/usr/local/bin` and grants the sudoers rule to the
+invoking user only. The applet resolves the helper at runtime, preferring
+`/usr/local/bin` over `/usr/bin`, so both layouts work — and can coexist.
+
+To build the `.deb` yourself: `make applet-deb VERSION=2.0.1` from the repo root.
+
 Then: COSMIC Settings → Desktop → Panel → Configure panel applets → **Add "Color Temperature"**.
 
 ## Uninstall
 
 ```sh
-sudo ./uninstall.sh
+sudo ./uninstall.sh          # source install
+sudo apt remove drm-colortemp-cosmic-applet   # .deb
 ```
 
 ## Files installed
+
+Paths below are for a source install; packages use `/usr/bin` instead of
+`/usr/local/bin`.
 
 | Path | Purpose |
 |---|---|
@@ -56,10 +85,16 @@ sudo ./uninstall.sh
 | `/usr/share/applications/io.github.jjo.CosmicAppletColortemp.desktop` | panel applet entry |
 | `/usr/share/icons/hicolor/scalable/apps/…-symbolic.svg` | panel icon |
 
+The sudoers rule is generated from `data/drm-colortemp-applet.sudoers.in` — one
+template shared by `install.sh`, the `.deb`, and the AUR PKGBUILDs, so the
+authorized command lines can't drift between install methods.
+
 ## Troubleshooting
 
-- **"sudo rule missing"** in the popup → re-run `sudo ./install.sh` (it regenerates
-  and validates the sudoers rule with `visudo -c`).
+- **"sudo rule missing"** in the popup → source install: re-run `sudo ./install.sh`
+  (it regenerates and validates the sudoers rule with `visudo -c`). Package install:
+  confirm your user is in `sudo` (Debian/Ubuntu) or `wheel` (Arch) —
+  `id -nG | tr ' ' '\n' | grep -x 'sudo\|wheel'`.
 - **"daemon is not running"** → `sudo systemctl enable --now drm-colortemp-daemon`.
 - **Nothing changes but console flashes** → check `sudo journalctl -u drm-colortemp-daemon -f`
   while clicking; verify `MONITOR_TTY`/`WARM_TTY`/`COOL_TTY` in

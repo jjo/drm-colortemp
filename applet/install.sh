@@ -45,11 +45,10 @@ command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q /usr/sha
 echo "==> Installing sudoers rule (only the 3 exact helper commands, for $APPLET_USER)"
 SUDOERS_FILE=/etc/sudoers.d/drm-colortemp-applet
 TMP=$(mktemp)
-cat > "$TMP" <<EOF
-# Allow $APPLET_USER to trigger drm-colortemp's VT-switch helper without a
-# password. Installed by cosmic-applet-colortemp. Remove with uninstall.sh.
-$APPLET_USER ALL=(root) NOPASSWD: /usr/local/bin/drm-colortemp-apply auto, /usr/local/bin/drm-colortemp-apply night, /usr/local/bin/drm-colortemp-apply day
-EOF
+# Same template the .deb and AUR packages use; they substitute a %group instead
+# of a username, and /usr/bin instead of /usr/local/bin.
+sed -e "s|@PRINCIPAL@|$APPLET_USER|g" -e 's|@BINDIR@|/usr/local/bin|g' \
+    data/drm-colortemp-applet.sudoers.in > "$TMP"
 visudo -cf "$TMP" >/dev/null   # validate before installing
 install -m 0440 "$TMP" "$SUDOERS_FILE"
 rm -f "$TMP"

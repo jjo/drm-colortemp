@@ -2,10 +2,10 @@
 //! COSMIC panel applet for drm-colortemp (https://github.com/jjo/drm-colortemp)
 //!
 //! Presents Auto / Night / Day buttons in a panel popup. Each button invokes
-//! `sudo -n /usr/local/bin/drm-colortemp-apply <mode>`, which performs the
-//! VT-switch dance (chvt) that lets the drm-colortemp daemon apply gamma while
-//! COSMIC has released DRM master. The sudoers rule installed by install.sh
-//! allows exactly those three commands, passwordless, for your user only.
+//! `sudo -n <bindir>/drm-colortemp-apply <mode>`, which performs the VT-switch
+//! dance (chvt) that lets the drm-colortemp daemon apply gamma while COSMIC has
+//! released DRM master. The accompanying sudoers rule allows exactly those three
+//! commands, passwordless.
 
 use cosmic::{
     app::{self, Core},
@@ -19,11 +19,32 @@ use cosmic::{
     widget::{divider, text},
     Element, Task,
 };
+use std::{path::Path, sync::OnceLock};
 
 const ID: &str = "io.github.jjo.CosmicAppletColortemp";
 const ICON: &str = "io.github.jjo.CosmicAppletColortemp-symbolic";
-const HELPER: &str = "/usr/local/bin/drm-colortemp-apply";
 const CONF: &str = "/etc/default/drm-colortemp.conf";
+
+/// Root helper locations, in precedence order: `install.sh` puts it in
+/// `/usr/local/bin`, distro packages (.deb, AUR) in `/usr/bin`. Resolved at
+/// runtime so one binary works with either layout, and so the path passed to
+/// `sudo` matches the sudoers rule that was installed alongside the helper.
+const HELPER_CANDIDATES: [&str; 2] = [
+    "/usr/local/bin/drm-colortemp-apply",
+    "/usr/bin/drm-colortemp-apply",
+];
+
+fn helper_path() -> &'static str {
+    static HELPER: OnceLock<&'static str> = OnceLock::new();
+    HELPER.get_or_init(|| {
+        HELPER_CANDIDATES
+            .into_iter()
+            .find(|p| Path::new(p).exists())
+            // Nothing installed: keep the source-install path so the error the
+            // user sees names a concrete file.
+            .unwrap_or(HELPER_CANDIDATES[0])
+    })
+}
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt::init();
@@ -70,6 +91,10 @@ enum Message {
     CloseRequested(window::Id),
     Apply(Mode),
     Applied(Mode, Result<(), String>),
+    // Wiring point for libcosmic surface actions. Nothing in this applet emits
+    // it yet (popups are driven directly via surface_task), but the handler in
+    // update() is the required shape for when one does.
+    #[allow(dead_code)]
     Surface(surface::Action),
 }
 
@@ -179,7 +204,7 @@ impl cosmic::Application for Window {
                 self.status = Status::Applying(mode);
                 return cosmic::task::future(async move {
                     let out = tokio::process::Command::new("sudo")
-                        .args(["-n", HELPER, mode.arg()])
+                        .args(["-n", helper_path(), mode.arg()])
                         .output()
                         .await;
                     let result = match out {
@@ -190,7 +215,8 @@ impl cosmic::Application for Window {
                             if err.contains("a password is required")
                                 || err.contains("password is required")
                             {
-                                err = "sudo rule missing — re-run install.sh".to_string();
+                                err = "sudo rule missing — see /etc/sudoers.d/drm-colortemp-applet"
+                                    .to_string();
                             } else if err.is_empty() {
                                 err = format!("helper exited with {}", o.status);
                             }
