@@ -32,6 +32,25 @@ split_list() {
         | grep -v '^$' || true
 }
 
+# Ask dpkg which package owns a library path. On merged-/usr systems (Debian 12+,
+# Ubuntu 22.04+) ldd reports /lib/..., while dpkg's database only records the
+# /usr/lib/... name, so a single lookup silently finds nothing. Try the plausible
+# spellings, including the fully resolved symlink target.
+owning_package() {
+    _path=$1
+    for _cand in "$_path" "/usr$_path" "$(readlink -f "$_path" 2>/dev/null || true)" \
+                 "$(readlink -f "/usr$_path" 2>/dev/null || true)"; do
+        [ -n "$_cand" ] || continue
+        _pkg=$(dpkg -S "$_cand" 2>/dev/null | head -1 | cut -d: -f1) || _pkg=''
+        if [ -n "$_pkg" ]; then
+            printf '%s\n' "$_pkg"
+            return 0
+        fi
+    done
+    echo "applet-deb-deps.sh: no package owns $_path" >&2
+    return 0
+}
+
 derived=''
 if command -v dpkg >/dev/null 2>&1 && command -v objdump >/dev/null 2>&1; then
     derived=$(
@@ -42,12 +61,20 @@ if command -v dpkg >/dev/null 2>&1 && command -v objdump >/dev/null 2>&1; then
             path=$(ldd "$BIN" 2>/dev/null \
                 | awk -v s="$so" '$1 == s && $2 == "=>" {print $3; exit}')
             [ -n "$path" ] || continue
-            dpkg -S "$path" 2>/dev/null | head -1 | cut -d: -f1
+            owning_package "$path"
         done
     )
 fi
 
 if [ -z "$derived" ]; then
+    # REQUIRE_DERIVED makes the fallback fatal. CI sets it so that a broken
+    # derivation fails the build instead of quietly shipping the static list,
+    # which would make the dependency assertions vacuous.
+    if [ -n "${REQUIRE_DERIVED:-}" ]; then
+        echo "applet-deb-deps.sh: DT_NEEDED derivation produced nothing and" \
+             "REQUIRE_DERIVED is set — refusing to fall back to STATIC_DEPS" >&2
+        exit 1
+    fi
     echo "applet-deb-deps.sh: could not derive DT_NEEDED deps (no dpkg?); using STATIC_DEPS" >&2
     derived=$(split_list "$STATIC_DEPS")
 fi

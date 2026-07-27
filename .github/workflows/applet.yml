@@ -52,7 +52,7 @@ jobs:
       run: cargo clippy --all-targets -- -D warnings
 
     - name: Build applet deb
-      run: make applet-deb VERSION=0.0.0-dev
+      run: make applet-deb VERSION=0.0.0-dev REQUIRE_DERIVED=1
 
     - name: Verify applet deb contents and deps
       run: |

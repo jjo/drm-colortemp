@@ -24,8 +24,12 @@ section heading format strict: `## [X.Y.Z] - YYYY-MM-DD`.
     absolute paths via `ldd` and attributed with `dpkg -S`, so a
     libcosmic bump is picked up automatically, then unioned
     (deduplicated) with the libraries libcosmic/winit `dlopen()`, which
-    carry no `DT_NEEDED` entry and cannot be derived. The applet renders
-    via tiny-skia/softbuffer, so it needs no Vulkan or GL runtime.
+    carry no `DT_NEEDED` entry and cannot be derived. Path lookup handles
+    merged-`/usr` systems, where `ldd` reports `/lib/...` but dpkg only
+    records the `/usr/lib/...` name. `REQUIRE_DERIVED=1` (set by CI)
+    makes the static fallback a hard error, so a broken derivation cannot
+    masquerade as a passing build. The applet renders via
+    tiny-skia/softbuffer, so it needs no Vulkan or GL runtime.
   - AUR: `packaging/aur/PKGBUILD-cosmic-applet` (release tarball) and
     `PKGBUILD-cosmic-applet-git` (tracks `main`), publishing
     `cosmic-applet-colortemp` / `-git`.

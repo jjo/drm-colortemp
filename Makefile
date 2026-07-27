@@ -149,6 +149,9 @@ APPLET_X11_DEPS ?= libx11-6, libx11-xcb1, libxcb1, libxi6, libxkbcommon-x11-0
 # Fallback when dpkg is unavailable to map sonames to packages (e.g. building
 # the .deb on a non-Debian host). Mirrors the binary's current DT_NEEDED set.
 APPLET_STATIC_DEPS ?= libc6, libgcc-s1, libxkbcommon0
+# Set to 1 on Debian hosts (CI does) to make the static fallback a hard error
+# instead of a silent downgrade — otherwise a broken derivation looks like a pass.
+REQUIRE_DERIVED ?=
 # Note: the applet renders with tiny-skia/softbuffer (software), not wgpu, so it
 # needs no Vulkan or GL runtime — only fonts, hence the fonts-dejavu-core
 # Recommends below.
@@ -184,6 +187,7 @@ applet-deb: applet
 	# ones that carry no DT_NEEDED entry.
 	set -e; \
 	LIB_DEPS=$$(DLOPEN_DEPS="$(APPLET_DLOPEN_DEPS)" STATIC_DEPS="$(APPLET_STATIC_DEPS)" \
+		REQUIRE_DERIVED="$(REQUIRE_DERIVED)" \
 		$(SCRIPTS_DIR)/applet-deb-deps.sh applet/target/release/$(APPLET_BIN)); \
 	{ \
 		echo "Package: $(APPLET_PKG)"; \

@@ -36,7 +36,7 @@ jobs:
     - name: Build applet deb
       run: |
         VERSION=${GITHUB_REF#refs/tags/v}
-        make applet-deb VERSION=${VERSION}
+        make applet-deb VERSION=${VERSION} REQUIRE_DERIVED=1
         ARCH=$(dpkg --print-architecture)
         sha256sum build-deb/drm-colortemp-cosmic-applet_${VERSION}_${ARCH}.deb \
           > build-deb/drm-colortemp-cosmic-applet_${VERSION}_${ARCH}.deb.sha256
