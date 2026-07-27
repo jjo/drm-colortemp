@@ -11,6 +11,6 @@ pkgbase = drm-colortemp
 	optdepends = libnotify: desktop notifications
 	backup = etc/default/drm-colortemp.conf
 	source = drm-colortemp-2.0.1.tar.gz::https://github.com/jjo/drm-colortemp/archive/refs/tags/v2.0.1.tar.gz
-	sha256sums = SKIP
+	sha256sums = 6ca11dde47f9e8580644cbe1a3e4b1894a1b37a2e8704b920cac962a97d6f6f0
 
 pkgname = drm-colortemp

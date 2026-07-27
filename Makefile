@@ -139,7 +139,10 @@ APPLET_DAEMON_MIN ?= 2.0.0
 
 # Runtime libraries libcosmic/winit dlopen() rather than link: they carry no
 # DT_NEEDED entry, so they must be listed by hand. Required under COSMIC.
-APPLET_DLOPEN_DEPS ?= libwayland-client0
+# libxkbcommon0 is DT_NEEDED in the current build and would be derived anyway,
+# but winit can also load it via xkbcommon-dl, so name it here too; the union is
+# deduplicated.
+APPLET_DLOPEN_DEPS ?= libwayland-client0, libxkbcommon0
 # winit's X11 backend is also dlopen()ed. Unused on COSMIC (Wayland), so these
 # are Recommends, not Depends.
 APPLET_X11_DEPS ?= libx11-6, libx11-xcb1, libxcb1, libxi6, libxkbcommon-x11-0
@@ -176,26 +179,18 @@ applet-deb: applet
 		visudo -cf $(APPLET_DEB_DIR)/etc/sudoers.d/drm-colortemp-applet >/dev/null; \
 	fi
 	mkdir -p $(APPLET_DEB_DIR)/DEBIAN
-	# Library deps: derive the linked ones from DT_NEEDED so a libcosmic bump
-	# that adds a real link dependency is picked up automatically, then union in
-	# APPLET_DLOPEN_DEPS. libcosmic/winit dlopen() their Wayland and X11 clients,
-	# so those never appear in DT_NEEDED and must be named explicitly.
+	# Library deps are derived from the binary (see scripts/applet-deb-deps.sh):
+	# DT_NEEDED entries resolved to owning packages, unioned with the dlopen()ed
+	# ones that carry no DT_NEEDED entry.
 	set -e; \
-	SHLIB_DEPS=$$(objdump -p applet/target/release/$(APPLET_BIN) 2>/dev/null \
-		| awk '/NEEDED/ {print $$2}' \
-		| while read -r so; do \
-			dpkg -S "*/$$so" 2>/dev/null | head -1 | cut -d: -f1; \
-		  done | sort -u | paste -sd, - | sed 's/,/, /g'); \
-	if [ -z "$$SHLIB_DEPS" ]; then \
-		echo "WARNING: could not derive DT_NEEDED deps (no dpkg?); using a static list" >&2; \
-		SHLIB_DEPS="$(APPLET_STATIC_DEPS)"; \
-	fi; \
+	LIB_DEPS=$$(DLOPEN_DEPS="$(APPLET_DLOPEN_DEPS)" STATIC_DEPS="$(APPLET_STATIC_DEPS)" \
+		$(SCRIPTS_DIR)/applet-deb-deps.sh applet/target/release/$(APPLET_BIN)); \
 	{ \
 		echo "Package: $(APPLET_PKG)"; \
 		echo "Version: $(VERSION)"; \
 		echo "Architecture: $(ARCH)"; \
 		echo "Maintainer: jjo <jjo@users.noreply.github.com>"; \
-		echo "Depends: drm-colortemp (>= $(APPLET_DAEMON_MIN)), sudo, kbd, $$SHLIB_DEPS, $(APPLET_DLOPEN_DEPS)"; \
+		echo "Depends: drm-colortemp (>= $(APPLET_DAEMON_MIN)), sudo, kbd, $$LIB_DEPS"; \
 		echo "Recommends: $(APPLET_X11_DEPS), fonts-dejavu-core"; \
 		echo "Section: x11"; \
 		echo "Priority: optional"; \
@@ -207,11 +202,17 @@ applet-deb: applet
 		echo " that lets the daemon apply the gamma LUT."; \
 	} > $(APPLET_DEB_DIR)/DEBIAN/control
 	echo "/etc/sudoers.d/drm-colortemp-applet" > $(APPLET_DEB_DIR)/DEBIAN/conffiles
+	# Refuse to install over a source install (applet/install.sh): it owns the
+	# same sudoers file but authorizes the /usr/local/bin helper, which the applet
+	# prefers at runtime, so the combination denies every action.
+	printf '#!/bin/sh\nset -e\nif [ "$$1" = "install" ] && [ -e /usr/local/bin/drm-colortemp-apply ]; then\n    echo "ERROR: a source install was detected (/usr/local/bin/drm-colortemp-apply)." >&2\n    echo "It is mutually exclusive with this package; run applet/uninstall.sh first." >&2\n    exit 1\nfi\n' \
+		> $(APPLET_DEB_DIR)/DEBIAN/preinst
 	printf '#!/bin/sh\nset -e\nif [ "$$1" = "configure" ]; then\n    if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n        gtk-update-icon-cache -q /usr/share/icons/hicolor || true\n    fi\nfi\n' \
 		> $(APPLET_DEB_DIR)/DEBIAN/postinst
 	printf '#!/bin/sh\nset -e\nif [ "$$1" = "remove" ] || [ "$$1" = "purge" ]; then\n    if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n        gtk-update-icon-cache -q /usr/share/icons/hicolor || true\n    fi\nfi\n' \
 		> $(APPLET_DEB_DIR)/DEBIAN/postrm
-	chmod 755 $(APPLET_DEB_DIR)/DEBIAN/postinst $(APPLET_DEB_DIR)/DEBIAN/postrm
+	chmod 755 $(APPLET_DEB_DIR)/DEBIAN/preinst $(APPLET_DEB_DIR)/DEBIAN/postinst \
+		$(APPLET_DEB_DIR)/DEBIAN/postrm
 	dpkg-deb --build --root-owner-group $(APPLET_DEB_DIR) build-deb/
 	@echo ""
 	@echo "✓ Built build-deb/$(APPLET_DEB_PKG).deb"

@@ -68,6 +68,19 @@ jobs:
         grep -q '/usr/bin/drm-colortemp-apply auto' /tmp/applet.sudoers
         ! grep -q '@PRINCIPAL@\|@BINDIR@' /tmp/applet.sudoers
         sudo visudo -cf /tmp/applet.sudoers
+        # Dependency derivation must have run against a real dpkg here, and must
+        # still include the dlopen()ed libraries that carry no DT_NEEDED entry.
+        DEPS=$(dpkg-deb --field build-deb/drm-colortemp-cosmic-applet_*.deb Depends)
+        echo "Depends: $DEPS"
+        for pkg in drm-colortemp sudo kbd libwayland-client0 libxkbcommon0; do
+          echo "$DEPS" | grep -q "$pkg" || { echo "missing dep: $pkg" >&2; exit 1; }
+        done
+        # Each package must be named exactly once (the union is deduplicated).
+        dupes=$(echo "$DEPS" | tr ',' '\n' | awk '{print $1}' | sort | uniq -d)
+        [ -z "$dupes" ] || { echo "duplicate deps: $dupes" >&2; exit 1; }
+        # The mutual-exclusion guard against a source install must be present.
+        dpkg-deb --ctrl-tarfile build-deb/drm-colortemp-cosmic-applet_*.deb \
+          | tar -xO ./preinst | grep -q '/usr/local/bin/drm-colortemp-apply'
 
     - name: Upload applet deb
       uses: actions/upload-artifact@v4

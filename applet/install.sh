@@ -17,6 +17,18 @@ if ! id -u "$APPLET_USER" >/dev/null 2>&1; then
     exit 1
 fi
 
+# A packaged install owns the same /etc/sudoers.d/drm-colortemp-applet but
+# authorizes /usr/bin/drm-colortemp-apply, while this script installs the helper
+# to /usr/local/bin — which the applet prefers at runtime. Mixing the two yields
+# sudo denials on every action, so refuse instead of silently breaking it.
+if [ -e /usr/bin/drm-colortemp-apply ]; then
+    echo "ERROR: a packaged applet install was detected (/usr/bin/drm-colortemp-apply)." >&2
+    echo "The two layouts are mutually exclusive. Remove it first:" >&2
+    echo "  sudo apt remove drm-colortemp-cosmic-applet   # Debian/Ubuntu" >&2
+    echo "  sudo pacman -R cosmic-applet-colortemp        # Arch" >&2
+    exit 1
+fi
+
 BIN=target/release/cosmic-applet-colortemp
 
 # 1. Build (as the invoking user, not root, if possible)

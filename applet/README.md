@@ -59,7 +59,17 @@ Or from this directory: `cargo build --release && sudo ./install.sh`
 
 The source install uses `/usr/local/bin` and grants the sudoers rule to the
 invoking user only. The applet resolves the helper at runtime, preferring
-`/usr/local/bin` over `/usr/bin`, so both layouts work — and can coexist.
+`/usr/local/bin` over `/usr/bin`, so either layout works on its own.
+
+> **Pick one — they are mutually exclusive.** Both installers own the same
+> `/etc/sudoers.d/drm-colortemp-applet`, but authorize different helper paths.
+> Install the package over a source install and the packaged rule (which permits
+> only `/usr/bin/drm-colortemp-apply`) replaces yours, while the applet still
+> prefers the `/usr/local/bin` helper left behind — every action then fails with
+> a sudo denial. Remove the other layout first: `sudo ./uninstall.sh` before
+> installing the package, or `sudo apt remove drm-colortemp-cosmic-applet`
+> before installing from source. `install.sh` and the package both refuse to
+> proceed if they detect the other layout.
 
 To build the `.deb` yourself: `make applet-deb VERSION=2.0.1` from the repo root.
 

@@ -19,12 +19,13 @@ section heading format strict: `## [X.Y.Z] - YYYY-MM-DD`.
   binary package, so it no longer requires a from-source build:
   - `.deb`: `drm-colortemp-cosmic-applet_<ver>_<arch>.deb`, attached to
     every GitHub release. New `make applet-deb` target; `make debs`
-    builds both packages. Linked library dependencies are derived from
-    the binary's `DT_NEEDED` entries so a libcosmic bump is picked up
-    automatically; the libraries libcosmic/winit `dlopen()`
-    (`libwayland-client0`, and the X11 backend set) carry no `DT_NEEDED`
-    entry and are named explicitly. The applet renders via
-    tiny-skia/softbuffer, so it needs no Vulkan or GL runtime.
+    builds both packages. Library dependencies are computed by
+    `scripts/applet-deb-deps.sh`: `DT_NEEDED` sonames are resolved to
+    absolute paths via `ldd` and attributed with `dpkg -S`, so a
+    libcosmic bump is picked up automatically, then unioned
+    (deduplicated) with the libraries libcosmic/winit `dlopen()`, which
+    carry no `DT_NEEDED` entry and cannot be derived. The applet renders
+    via tiny-skia/softbuffer, so it needs no Vulkan or GL runtime.
   - AUR: `packaging/aur/PKGBUILD-cosmic-applet` (release tarball) and
     `PKGBUILD-cosmic-applet-git` (tracks `main`), publishing
     `cosmic-applet-colortemp` / `-git`.
@@ -43,9 +44,11 @@ section heading format strict: `## [X.Y.Z] - YYYY-MM-DD`.
   `%wheel` on Arch); `install.sh` still authorizes the invoking user only.
 - The applet resolves the root helper at runtime, preferring
   `/usr/local/bin/drm-colortemp-apply` (source install) over
-  `/usr/bin/drm-colortemp-apply` (packaged), so one binary serves both
-  layouts and the path handed to `sudo` always matches the installed
-  sudoers rule.
+  `/usr/bin/drm-colortemp-apply` (packaged), so one binary serves either
+  layout. The two layouts are **mutually exclusive**: they share
+  `/etc/sudoers.d/drm-colortemp-applet` but authorize different helper
+  paths, so mixing them yields sudo denials. `install.sh` and the
+  package's `preinst` each refuse to install over the other.
 - `make deb` and `make legacy-deb` no longer wipe all of `build-deb/`,
   only their own staging directory, so the daemon and applet packages can
   be built side by side.
