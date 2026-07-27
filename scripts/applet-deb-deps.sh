@@ -48,22 +48,48 @@ owning_package() {
         fi
     done
     echo "applet-deb-deps.sh: no package owns $_path" >&2
-    return 0
+    return 1
 }
+
+# A partially resolved list is worse than none: it would install cleanly and then
+# fail at runtime on the missing library. Any DT_NEEDED entry that cannot be
+# resolved and attributed therefore invalidates the whole derivation. The loop
+# runs in a subshell, so it signals failure through a marker file.
+unresolved=$(mktemp)
+trap 'rm -f "$unresolved"' EXIT INT TERM
 
 derived=''
 if command -v dpkg >/dev/null 2>&1 && command -v objdump >/dev/null 2>&1; then
     derived=$(
         objdump -p "$BIN" 2>/dev/null | awk '/NEEDED/ {print $2}' | while read -r so; do
+            # The program interpreter is listed in DT_NEEDED but ldd prints it
+            # without a `=>` mapping, so it is never resolvable here. It belongs
+            # to libc6, which libc.so.6 already pulls in.
+            case "$so" in
+                ld-linux*.so.*|ld64.so.*|ld.so.*) continue ;;
+            esac
             # Resolve the soname to the file actually loaded, then ask dpkg which
             # package owns that exact path. Globbing (`dpkg -S "*/$so"`) can match
             # several packages shipping the same basename and pick the wrong one.
+            # `=> not found` yields $3 == "not", which must not be taken as a path.
             path=$(ldd "$BIN" 2>/dev/null \
-                | awk -v s="$so" '$1 == s && $2 == "=>" {print $3; exit}')
-            [ -n "$path" ] || continue
-            owning_package "$path"
+                | awk -v s="$so" '$1 == s && $2 == "=>" && $3 != "not" {print $3; exit}')
+            if [ -z "$path" ]; then
+                echo "applet-deb-deps.sh: cannot resolve $so (missing library?)" >&2
+                echo "$so" >> "$unresolved"
+                continue
+            fi
+            owning_package "$path" || echo "$so" >> "$unresolved"
         done
     )
+fi
+
+if [ -s "$unresolved" ]; then
+    echo "applet-deb-deps.sh: unresolved DT_NEEDED entries:" \
+         "$(tr '\n' ' ' < "$unresolved")" >&2
+    # Discard the partial list so the checks below treat this as a failed
+    # derivation rather than shipping an incomplete Depends field.
+    derived=''
 fi
 
 if [ -z "$derived" ]; then

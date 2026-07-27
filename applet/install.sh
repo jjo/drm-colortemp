@@ -21,13 +21,17 @@ fi
 # authorizes /usr/bin/drm-colortemp-apply, while this script installs the helper
 # to /usr/local/bin — which the applet prefers at runtime. Mixing the two yields
 # sudo denials on every action, so refuse instead of silently breaking it.
-if [ -e /usr/bin/drm-colortemp-apply ]; then
+# Checked twice: once up front to fail fast, and again immediately before the
+# first write, because the build in between can take ~10 minutes.
+check_no_packaged_install() {
+    [ -e /usr/bin/drm-colortemp-apply ] || return 0
     echo "ERROR: a packaged applet install was detected (/usr/bin/drm-colortemp-apply)." >&2
     echo "The two layouts are mutually exclusive. Remove it first:" >&2
     echo "  sudo apt remove drm-colortemp-cosmic-applet   # Debian/Ubuntu" >&2
     echo "  sudo pacman -R cosmic-applet-colortemp        # Arch" >&2
     exit 1
-fi
+}
+check_no_packaged_install
 
 BIN=target/release/cosmic-applet-colortemp
 
@@ -40,6 +44,9 @@ if [ ! -x "$BIN" ]; then
         cargo build --release
     fi
 fi
+
+# Re-check: a package may have been installed while the build above ran.
+check_no_packaged_install
 
 echo "==> Installing applet binary"
 install -Dm755 "$BIN" /usr/local/bin/cosmic-applet-colortemp
