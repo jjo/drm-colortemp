@@ -52,7 +52,7 @@ sudo ./scripts/drm-colortemp-notify.sh your_username 3500 night
 1. Check NOTIFY_ENABLED=1 in config
 2. Verify NOTIFY_USER is set correctly
 3. Ensure `notify-send` is installed: `sudo apt install libnotify-bin`
-4. Check daemon logs: `sudo journalctl -u drm-colortemp-daemon -f`
+4. Check daemon logs: `sudo journalctl -u drm-colortemp -f`
 
 **Notifications to wrong user:**
 - Set NOTIFY_USER explicitly in config file
