@@ -1,5 +1,6 @@
 #!/bin/bash
 # install_daemon.sh - Interactive installer for DRM color temperature daemon
+# Installs the Rust implementation (primary, `make rust-install`).
 
 set -e
 
@@ -15,20 +16,20 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Compile if binaries don't exist
-if [ ! -f "drm_colortemp" ] || [ ! -f "drm_colortemp_daemon" ]; then
-    echo "Binaries not found, compiling..."
+# Compile if the Rust binary doesn't exist
+if [ ! -f "target/release/drm-colortemp-rs" ]; then
+    echo "Binary not found, compiling..."
     if ! make; then
         echo ""
         echo "Error: Compilation failed"
-        echo "Make sure you have build-essential and libdrm-dev installed:"
-        echo "  sudo apt install build-essential libdrm-dev linux-libc-dev"
+        echo "Make sure you have a Rust toolchain installed (e.g. via rustup):"
+        echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
         exit 1
     fi
     echo ""
 fi
 
-# Install main daemon
+# Install main daemon (binary, systemd unit, and config if not already present)
 echo "Installing main daemon..."
 make install
 
@@ -43,7 +44,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Installing notification service..."
     make install-notifier
     NOTIFIER_INSTALLED=1
-    
+
     # Try to detect current user
     DETECTED_USER=""
     if [ -n "$SUDO_USER" ]; then
@@ -51,13 +52,13 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     else
         DETECTED_USER=$(who | grep '(:0)' | awk '{print $1}' | head -1)
     fi
-    
+
     echo ""
     if [ -n "$DETECTED_USER" ]; then
         echo "Detected user: $DETECTED_USER"
         read -p "Configure notifications for this user? (y/n) " -n 1 -r
         echo ""
-        
+
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             # Enable notifications and set user in config
             sed -i "s/^NOTIFY_ENABLED=.*/NOTIFY_ENABLED=1/" /etc/default/drm-colortemp.conf
@@ -91,26 +92,24 @@ echo ""
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Enabling and starting main daemon..."
-    systemctl enable drm-colortemp-daemon.service
-    systemctl start drm-colortemp-daemon.service
-    
+    systemctl enable --now drm-colortemp
+
     if [ $NOTIFIER_INSTALLED -eq 1 ]; then
         echo "Enabling and starting notifier daemon..."
-        systemctl enable drm-colortemp-notifier.service
-        systemctl start drm-colortemp-notifier.service
+        systemctl enable --now drm-colortemp-notifier
     fi
-    
+
     echo ""
     echo "✓ Services are now running!"
     echo ""
     echo "Check status:"
-    echo "  sudo systemctl status drm-colortemp-daemon"
+    echo "  sudo systemctl status drm-colortemp"
     if [ $NOTIFIER_INSTALLED -eq 1 ]; then
         echo "  sudo systemctl status drm-colortemp-notifier"
     fi
     echo ""
     echo "View logs:"
-    echo "  sudo journalctl -u drm-colortemp-daemon -f"
+    echo "  sudo journalctl -u drm-colortemp -f"
     if [ $NOTIFIER_INSTALLED -eq 1 ]; then
         echo "  sudo journalctl -u drm-colortemp-notifier -f"
     fi
@@ -119,7 +118,7 @@ else
     echo "Services installed but not started."
     echo ""
     echo "To enable and start manually:"
-    echo "  sudo systemctl enable --now drm-colortemp-daemon"
+    echo "  sudo systemctl enable --now drm-colortemp"
     if [ $NOTIFIER_INSTALLED -eq 1 ]; then
         echo "  sudo systemctl enable --now drm-colortemp-notifier"
     fi
@@ -128,9 +127,10 @@ fi
 echo ""
 echo "=== Usage ==="
 echo ""
-echo "Apply color temperature:"
+echo "Apply color temperature (return-to-desktop key depends on your compositor's"
+echo "VT — usually F1 or F2; check with: loginctl show-session \$XDG_SESSION_ID -p VTNr):"
 echo "  1. Press Ctrl+Alt+F3"
-echo "  2. Immediately press Ctrl+Alt+F2"
+echo "  2. Immediately press Ctrl+Alt+F1 (or F2)"
 echo "  3. Done! Temperature applied."
 echo ""
 if [ $NOTIFIER_INSTALLED -eq 1 ]; then

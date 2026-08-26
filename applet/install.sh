@@ -79,7 +79,7 @@ if ! systemctl is-active --quiet drm-colortemp-daemon.service 2>/dev/null \
     echo "WARNING: the drm-colortemp daemon does not appear to be running."
     echo "The applet needs it. Install/enable it first:"
     echo "  https://github.com/jjo/drm-colortemp"
-    echo "  sudo systemctl enable --now drm-colortemp-daemon"
+    echo "  sudo systemctl enable --now drm-colortemp"
 fi
 
 echo ""

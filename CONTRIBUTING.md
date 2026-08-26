@@ -8,7 +8,7 @@ Thank you for considering contributing! This is a workaround tool for COSMIC DE 
 
 - Check if the issue already exists
 - Include your system info (distro, COSMIC version, kernel version)
-- Include relevant logs: `sudo journalctl -u drm-colortemp-daemon -n 50`
+- Include relevant logs: `sudo journalctl -u drm-colortemp -n 50`
 - Describe what you expected vs what happened
 
 ### Suggesting Features
@@ -45,15 +45,24 @@ Thank you for considering contributing! This is a workaround tool for COSMIC DE 
 Before submitting:
 
 ```bash
-# Compile and test
+# Compile and test the Rust implementation (primary)
 make clean
-make
+make rust-test
 
 # Test tool manually
-sudo ./drm_colortemp -h
-sudo ./drm_colortemp_daemon -h
+./target/release/drm-colortemp-rs -h
 
 # Test on actual system (from TTY)
+sudo ./target/release/drm-colortemp-rs -d /dev/dri/card1 -t 3500
+```
+
+If your change touches the legacy C code in `src-c/`, also run `make legacy-test`
+and the manual checks below:
+
+```bash
+make legacy
+sudo ./drm_colortemp -h
+sudo ./drm_colortemp_daemon -h
 sudo ./drm_colortemp -d /dev/dri/card1 -t 3500
 ```
 
@@ -70,13 +79,17 @@ sudo ./drm_colortemp -d /dev/dri/card1 -t 3500
 git clone https://github.com/jjo/drm-colortemp.git
 cd drm-colortemp
 
-# Install deps
-sudo apt install build-essential libdrm-dev linux-libc-dev libnotify-bin
-
-# Build
+# Build the Rust implementation (primary; needs a Rust toolchain, e.g. via rustup)
 make
 
 # Test
+./target/release/drm-colortemp-rs -h
+```
+
+Working on the legacy C code or shell scripts instead? You'll also need:
+```bash
+sudo apt install build-essential libdrm-dev linux-libc-dev libnotify-bin
+make legacy
 sudo ./drm_colortemp -h
 ```
 

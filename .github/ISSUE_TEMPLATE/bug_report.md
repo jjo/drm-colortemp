@@ -27,7 +27,7 @@ labels: bug
 
 ## Logs
 ```
-# Output of: sudo journalctl -u drm-colortemp-daemon -n 50
+# Output of: sudo journalctl -u drm-colortemp -n 50
 paste here
 ```
 

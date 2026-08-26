@@ -39,6 +39,8 @@ rust-install: rust-build
 	@echo "Installing Rust implementation..."
 	install -D -m 755 target/release/$(CARGO_BIN) /usr/local/bin/$(RUST_TOOL)
 	install -D -m 644 $(RUST_SERVICE) /etc/systemd/system/$(RUST_TOOL).service
+	# Don't clobber an existing (possibly edited) config on reinstall/upgrade.
+	[ -f /etc/default/drm-colortemp.conf ] || install -D -m 644 drm-colortemp.conf /etc/default/drm-colortemp.conf
 	systemctl daemon-reload
 	@echo ""
 	@echo "✓ Rust installation complete!"
@@ -383,6 +385,14 @@ $(C_SRC_DIR)/drm_colortemp_daemon_inotify_test.o: $(C_SRC_DIR)/drm_colortemp_dae
 # ALIASES & BACKWARD COMPATIBILITY
 # =============================================================================
 
+# Unprefixed names point at the Rust (primary/recommended) implementation,
+# matching README's Quick Start and `.DEFAULT_GOAL := rust` above.
+install: rust-install
+install-notifier: legacy-install-notifier
+uninstall: rust-uninstall
+
+.PHONY: install install-notifier uninstall
+
 # =============================================================================
 # COSMIC panel applet (optional, see applet/README.md)
 # =============================================================================
@@ -455,9 +465,12 @@ help:
 	@echo "Aliases:"
 	@echo "  all                  - Build both Rust and C versions"
 	@echo "  clean                - Clean both versions"
+	@echo "  install              - Alias for rust-install"
+	@echo "  install-notifier     - Alias for legacy-install-notifier"
+	@echo "  uninstall            - Alias for rust-uninstall"
 	@echo "  tool                 - Alias for legacy-tool"
 	@echo "  daemon               - Alias for legacy-daemon"
-	@echo "  test                 - Alias for legacy-test"
+	@echo "  test                 - Alias for rust-test"
 	@echo ""
 	@echo "Recommendation: Use Rust version for new installations"
 	@echo "  make rust-install    # Install Rust v2.0"

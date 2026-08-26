@@ -23,7 +23,7 @@ user only. The applet itself runs unprivileged.
 ## Prerequisites
 
 - drm-colortemp installed with its daemon running:
-  `sudo systemctl enable --now drm-colortemp-daemon`
+  `sudo systemctl enable --now drm-colortemp`
 - Rust toolchain (rustup recommended; libcosmic wants a recent stable, 1.85+)
 - Build deps: `sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev cmake`
 
@@ -105,8 +105,8 @@ authorized command lines can't drift between install methods.
   (it regenerates and validates the sudoers rule with `visudo -c`). Package install:
   confirm your user is in `sudo` (Debian/Ubuntu) or `wheel` (Arch) —
   `id -nG | tr ' ' '\n' | grep -x 'sudo\|wheel'`.
-- **"daemon is not running"** → `sudo systemctl enable --now drm-colortemp-daemon`.
-- **Nothing changes but console flashes** → check `sudo journalctl -u drm-colortemp-daemon -f`
+- **"daemon is not running"** → `sudo systemctl enable --now drm-colortemp`.
+- **Nothing changes but console flashes** → check `sudo journalctl -u drm-colortemp -f`
   while clicking; verify `MONITOR_TTY`/`WARM_TTY`/`COOL_TTY` in
   `/etc/default/drm-colortemp.conf` match what the helper targets (it reads the same file).
 - **Applet not listed in panel settings** → confirm the .desktop file is in

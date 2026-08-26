@@ -55,7 +55,7 @@ sudo ./scripts/install_daemon.sh
 # Or non-interactive
 sudo make install
 sudo make install-notifier  # Optional: desktop notifications
-sudo systemctl enable --now drm-colortemp-daemon
+sudo systemctl enable --now drm-colortemp
 sudo systemctl enable --now drm-colortemp-notifier  # Optional
 
 # Use it! Press Ctrl+Alt+F3, then immediately Ctrl+Alt+F2
@@ -93,7 +93,7 @@ You can also use the tool directly (requires TTY):
 
 ```bash
 # From TTY (Ctrl+Alt+F3):
-sudo drm_colortemp -d /dev/dri/card1 -t 3500
+sudo drm-colortemp -d /dev/dri/card1 -t 3500
 ```
 
 ### COSMIC Panel Applet (Optional)
@@ -195,9 +195,9 @@ See [NOTIFICATIONS.md](NOTIFICATIONS.md) for detailed documentation.
 
 ```bash
 # Main daemon
-sudo systemctl status drm-colortemp-daemon
-sudo systemctl restart drm-colortemp-daemon
-sudo journalctl -u drm-colortemp-daemon -f
+sudo systemctl status drm-colortemp
+sudo systemctl restart drm-colortemp
+sudo journalctl -u drm-colortemp -f
 
 # Notification daemon (if installed)
 sudo systemctl status drm-colortemp-notifier
@@ -207,12 +207,12 @@ sudo journalctl -u drm-colortemp-notifier -f
 ## Troubleshooting
 
 ### "Permission denied" errors
-- Ensure daemon is running: `sudo systemctl status drm-colortemp-daemon`
+- Ensure daemon is running: `sudo systemctl status drm-colortemp`
 - Check device path in config: `/etc/default/drm-colortemp.conf`
 - Verify you're on the correct TTY when applying
 
 ### Color not applying
-- Check logs: `sudo journalctl -u drm-colortemp-daemon -f`
+- Check logs: `sudo journalctl -u drm-colortemp -f`
 - Ensure you switch to TTY3 (not TTY1 or TTY2)
 - Verify the tool works manually from TTY3
 
@@ -263,9 +263,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cd drm-colortemp
 cargo build --release
 
-# Install binary
-sudo cp target/release/drm-colortemp-rs /usr/local/bin/drm-colortemp
-sudo cp drm-colortemp.service /etc/systemd/system/
+# Install binary, config, and systemd unit (equivalent to `sudo make rust-install`)
+sudo install -D -m 755 target/release/drm-colortemp-rs /usr/local/bin/drm-colortemp
+sudo install -D -m 644 scripts/drm-colortemp.service /etc/systemd/system/drm-colortemp.service
+[ -f /etc/default/drm-colortemp.conf ] || sudo install -D -m 644 drm-colortemp.conf /etc/default/drm-colortemp.conf
 sudo systemctl daemon-reload
 ```
 
