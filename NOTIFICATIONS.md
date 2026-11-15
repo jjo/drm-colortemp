@@ -21,6 +21,15 @@ NOTIFY_USER="your_username"
 NOTIFY_MINUTES_BEFORE=5
 ```
 
+The notifier reads the config only at startup, so restart it after changing these settings:
+
+```bash
+sudo systemctl restart drm-colortemp-notifier
+```
+
+With `NOTIFY_ENABLED=0` the service can stay enabled: systemd skips it at start
+(`systemctl status` shows the condition as failed) and nothing keeps running.
+
 ## Auto-detect Username
 
 If you leave `NOTIFY_USER=""` empty, the daemon will try to auto-detect the logged-in user.

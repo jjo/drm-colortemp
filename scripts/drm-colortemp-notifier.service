@@ -5,8 +5,11 @@ After=graphical.target
 
 [Service]
 Type=simple
+# Only run when notifications are enabled. Otherwise the unit is skipped
+# ("condition failed") instead of starting, exiting and being restarted forever.
+ExecCondition=/bin/sh -c '. /etc/default/drm-colortemp.conf && [ "$$NOTIFY_ENABLED" = 1 ]'
 ExecStart=/usr/local/bin/drm-colortemp-notifier.sh
-Restart=always
+Restart=on-failure
 RestartSec=60
 StandardOutput=journal
 StandardError=journal
